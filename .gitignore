@@ -1,5 +1,5 @@
-raw/
-scripts/
+/raw/
+/scripts/
 .claude/
 __pycache__/
 *.pyc
