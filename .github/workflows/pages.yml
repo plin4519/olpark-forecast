@@ -1,0 +1,58 @@
+name: 예보 갱신 및 배포
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 20 * * *" # 매일 05:00 KST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Seoul
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      private: ${{ steps.vis.outputs.private }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pandas numpy requests
+      # 수집이 실패해도 저장소에 있는 직전 데이터로 예보를 만든다
+      - name: 공연 일정·날씨 예보 갱신
+        continue-on-error: true
+        run: python pipeline/fetch_events_weather.py --refresh
+      - name: 분석·예보 생성
+        run: python pipeline/build_data.py
+      - name: 저장소 공개 여부 확인
+        id: vis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "private=$(gh api repos/${{ github.repository }} --jq .private)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    # GitHub Pages는 공개 저장소에서만 배포한다(비공개 상태에서는 건너뜀)
+    if: needs.build.outputs.private == 'false'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
