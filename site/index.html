@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>올팍예보 — 날씨처럼 미리 보는 올림픽공원 혼잡 예보</title>
+<meta name="description" content="한국체육산업개발(주) 공공데이터로 만든 올림픽공원 혼잡 예보·공연 방문 플래너">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">올팍<b>예보</b></span>
+      <span class="tag">날씨처럼 미리 보는 올림픽공원 혼잡 예보</span>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="화면 선택">
+      <button role="tab" data-tab="forecast" aria-selected="true">혼잡 예보</button>
+      <button role="tab" data-tab="planner" aria-selected="false">공연 방문 플래너</button>
+      <button role="tab" data-tab="insight" aria-selected="false">데이터 인사이트</button>
+      <button role="tab" data-tab="data" aria-selected="false">데이터·한계</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p id="loading" class="muted">데이터를 불러오는 중입니다…</p>
+
+  <section id="tab-forecast" class="tab" hidden>
+    <div id="today-card" class="card hero"></div>
+    <div class="card">
+      <div class="card-head">
+        <h2>6주 혼잡 예보</h2>
+        <p class="muted">날짜를 누르면 시간대별 예상과 방문 가이드를 볼 수 있습니다.</p>
+      </div>
+      <div class="legend" id="grade-legend"></div>
+      <div id="calendar" class="calendar"></div>
+    </div>
+    <div class="card" id="day-detail"></div>
+  </section>
+
+  <section id="tab-planner" class="tab" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>공연 방문 플래너</h2>
+        <p class="muted">공연을 고르면 실제 입출차 기록에 근거한 도착·출차 시간표와 예상 주차요금을 만들어 드립니다.</p>
+      </div>
+      <div id="show-list" class="show-list"></div>
+    </div>
+    <div class="card" id="plan"></div>
+  </section>
+
+  <section id="tab-insight" class="tab" hidden>
+    <div id="tiles" class="tiles"></div>
+    <div class="grid2">
+      <div class="card"><h3>차량 3대 중 1대는 10분 안에 나간다</h3><p class="muted">체류시간 유형별 비중 · 2024년 7월 입출차 215,528건</p><div id="c-dwell"></div><p class="note" id="n-dwell"></p></div>
+      <div class="card"><h3>평일은 오전, 주말은 오후에 찬다</h3><p class="muted">시간대별 평균 주차 대수(공연 영향이 적은 날)</p><div class="legend" id="lg-profile"></div><div id="c-profile"></div><p class="note" id="n-profile"></p></div>
+    </div>
+    <div class="card">
+      <h3>같은 KSPO DOME 공연인데, 주차장이 차는 날과 승하차만 몰리는 날이 갈린다</h3>
+      <p class="muted">2024년 7월 일자별 최대 주차 대수(위)와 10분 이하 회차 건수(아래)</p>
+      <div class="legend" id="lg-july"></div>
+      <div id="c-july-peak"></div>
+      <div id="c-july-short"></div>
+      <div class="table-wrap"><table id="t-dome" class="tbl"></table></div>
+      <p class="note" id="n-dome"></p>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>먼저 차는 구역, 늦게 차는 구역</h3><p class="muted">구역별·시간대별 혼잡·만차 기록 건수 · 2025-02 ~ 2026-08</p><div id="c-zone"></div><p class="note" id="n-zone"></p></div>
+      <div class="card"><h3>주말·휴일 혼잡은 봄에 몰린다</h3><p class="muted">주말·공휴일 중 혼잡·만차 기록이 있었던 날의 비율(월별)</p><div id="c-month"></div><p class="note" id="n-month"></p></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>예보 모델: 무엇이 혼잡 확률을 올리나</h3><p class="muted">로지스틱 회귀 오즈비(1보다 크면 혼잡 기록 가능성 증가)</p><div id="c-odds"></div><p class="note" id="n-model"></p></div>
+      <div class="card"><h3>예보 등급은 실제와 얼마나 맞았나</h3><p class="muted">월 단위 교차검증: 등급별 실제 혼잡 기록 발생률</p><div id="c-calib"></div><div class="table-wrap"><table id="t-model" class="tbl"></table></div></div>
+    </div>
+    <div class="card"><h3>연중 흐름: 5월과 10~11월이 성수기</h3><p class="muted">올림픽공원 월별 주차 대수 · 2023~2025</p><div class="legend" id="lg-monthly"></div><div id="c-monthly"></div></div>
+  </section>
+
+  <section id="tab-data" class="tab" hidden>
+    <div class="card"><h2>활용한 공공데이터</h2><div class="table-wrap"><table id="t-datasets" class="tbl"></table></div></div>
+    <div class="grid2">
+      <div class="card"><h2>예보는 이렇게 만듭니다</h2><ol id="method" class="steps"></ol></div>
+      <div class="card"><h2>한계와 주의</h2><ul id="limits" class="bul"></ul></div>
+    </div>
+    <div class="card"><h2>데이터 품질 진단과 추가 개방 제안</h2><div class="table-wrap"><table id="t-quality" class="tbl"></table></div></div>
+    <div class="card"><h2>자주 묻는 질문 <span class="muted small">(한국체육산업개발 FAQ 데이터)</span></h2><div id="faq"></div></div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p>올팍예보는 2026년도 한국체육산업개발(주) 공공데이터 활용 경진대회 출품용 프로토타입입니다. 예보는 과거 기록에 근거한 통계적 추정이며 실제 상황과 다를 수 있습니다.</p>
+  <p id="foot-meta" class="muted"></p>
+</footer>
+<div id="tip" class="tip" role="status" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
