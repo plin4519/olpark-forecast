@@ -11,7 +11,7 @@
   const GRADE = { 여유: { cls: 'g-good', icon: '●', color: 'var(--good)' }, 보통: { cls: 'g-warn', icon: '▲', color: 'var(--warn)' }, 혼잡: { cls: 'g-crit', icon: '■', color: 'var(--crit)' } };
   const gradeHtml = (g) => `<span class="grade ${GRADE[g].cls}"><i aria-hidden="true">${GRADE[g].icon}</i><span>${g}</span></span>`;
   const TIER_SHORT = { DOME: 'KSPO DOME', ARENA: '핸드볼경기장', HALL: '올림픽홀', OUTDOOR: '야외무대', SMALL: '소극장' };
-  const SEQ = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
+  const SEQ = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'].reverse();
   let D, EV, selDate, selShow, mode = 'car';
 
   /* ---------- 툴팁 ---------- */
@@ -58,7 +58,7 @@
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${s}</svg>`;
   }
   /* 선 그래프: series=[{name, values, color}], band={lo,hi}, vlines=[{x,label}], hline={y,label} */
-  function lines(el, { x, series, band, vlines = [], hline, H = 230, ymax, xEvery = 3, xfmt = (v) => v, tipfn, endLabels = true }) {
+  function lines(el, { x, series, band, vlines = [], hline, H = 230, ymax, xEvery = 3, xfmt = (v) => v, tipfn, endLabels = true, marker }) {
     const W = Math.max(300, Math.round(el.clientWidth) || 720), m = { l: 46, r: endLabels ? 60 : 12, t: 16, b: 24 };
     xEvery = Math.max(xEvery, Math.ceil(34 / ((W - m.l - m.r) / (x.length - 1))));
     const all = series.flatMap((s) => s.values).concat(band ? band.hi : [], hline ? [hline.y] : []);
@@ -69,10 +69,10 @@
     if (hline) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(hline.y)}" y2="${Y(hline.y)}" stroke="var(--ink2)" stroke-width="1"/><text class="lbl" x="${m.l + 4}" y="${Y(hline.y) - 5}">${esc(hline.label)}</text>`;
     if (band) {
       const up = band.hi.map((v, i) => `${X(i)},${Y(v)}`).join(' L'), dn = band.lo.map((v, i) => `${X(i)},${Y(v)}`).reverse().join(' L');
-      s += `<path d="M${up} L${dn} Z" fill="var(--s1)" opacity="0.14"/>`;
+      s += `<path d="M${up} L${dn} Z" fill="var(--s1)" opacity="0.2"/>`;
     }
     vlines.forEach((v) => {
-      s += `<line x1="${X(v.x)}" x2="${X(v.x)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--axis)" stroke-width="1"/><text class="lbl" x="${X(v.x) + 4}" y="${m.t + (v.row || 0) * 14 + 8}">${esc(v.label)}</text>`;
+      s += `<line x1="${X(v.x)}" x2="${X(v.x)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--axis)" stroke-width="1"/><text class="lbl" x="${X(v.x) + (X(v.x) > W * 0.6 ? -5 : 5)}" y="${m.t + (v.row || 0) * 14 + 8}" text-anchor="${X(v.x) > W * 0.6 ? 'end' : 'start'}">${esc(v.label)}</text>`;
     });
     const ends = [];
     series.forEach((sr) => {
@@ -85,6 +85,14 @@
       ends.sort((a, b) => a.y - b.y);
       for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
       ends.forEach((e) => { s += `<text class="lbl" x="${W - m.r + 8}" y="${e.y + 4}">${esc(e.name)}</text>`; });
+    }
+    if (marker != null) {
+      const mx = X(marker);
+      s += `<line x1="${mx}" x2="${mx}" y1="${m.t}" y2="${H - m.b}" stroke="var(--ink)" stroke-width="1" opacity=".75"/>`;
+      series.forEach((sr) => {
+        const a = Math.floor(marker), b = Math.min(sr.values.length - 1, a + 1), v = sr.values[a] + (sr.values[b] - sr.values[a]) * (marker - a);
+        s += `<circle cx="${mx}" cy="${Y(v)}" r="5" fill="${sr.color}" stroke="var(--ink)" stroke-width="2"/>`;
+      });
     }
     const bw = (W - m.l - m.r) / (x.length - 1);
     x.forEach((v, i) => {
@@ -121,20 +129,61 @@
 
   /* ---------- 탭 ---------- */
   function tabs() {
-    document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));
+    document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab, true)));
+    document.addEventListener('click', (e) => {
+      const g = e.target.closest('[data-go]');
+      if (g) { e.preventDefault(); show(g.dataset.go, true); return; }
+      const sc = e.target.closest('[data-scroll]');
+      if (sc) document.querySelector(sc.dataset.scroll).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     const h = location.hash.replace('#', '');
     show(['forecast', 'planner', 'insight', 'data'].includes(h) ? h : 'forecast');
   }
-  function show(name) {
-    document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === name));
+  function show(name, top) {
+    document.querySelectorAll('.tabs button[data-tab]').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === name));
     document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + name; });
     history.replaceState(null, '', '#' + name);
+    if (top) window.scrollTo({ top: 0, behavior: 'instant' });
     if (D) redraw(name);
+    observe();
+  }
+
+  /* ---------- 모션: 블러 인, 숫자 카운트업 ---------- */
+  // ?still = 모션 없이 최종 상태로 표시(화면 캡처용)
+  const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches || /[?&]still/.test(location.search);
+  if (REDUCE) document.documentElement.classList.add('still');
+  let io;
+  function countUp(root) {
+    root.querySelectorAll('[data-count]').forEach((el) => {
+      const to = +el.dataset.count;
+      if (REDUCE) { el.textContent = num(to); return; }
+      const t0 = performance.now(), dur = 1500;
+      const tick = (now) => {
+        const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 4);
+        el.textContent = num(Math.round(to * e));
+        if (k < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      setTimeout(() => { el.textContent = num(to); }, dur + 400);
+    });
+  }
+  // 화면에 들어온 요소를 드러낸다. 프레임이 멈춘 환경에서도 내용이 숨은 채 남지 않도록 스크롤·타이머로 직접 확인한다.
+  function revealCheck() {
+    const vh = window.innerHeight;
+    document.querySelectorAll('[data-reveal]:not(.in)').forEach((e) => {
+      const r = e.getBoundingClientRect();
+      if (r.width && r.top < vh * 0.94 && r.bottom > 0) { e.classList.add('in'); countUp(e); }
+    });
+  }
+  function observe() {
+    if (!io) { io = true; window.addEventListener('scroll', revealCheck, { passive: true }); window.addEventListener('resize', revealCheck); }
+    revealCheck();
+    setTimeout(revealCheck, 400);
   }
 
   function redraw(name) {
     if (name === 'insight') insight();
-    else if (name === 'forecast' && selDate) dayDetail();
+    else if (name === 'forecast' && selDate) { dayDetail(); if (dots.state) dots.state.resize(); }
   }
   let rz;
   window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { const t = document.querySelector('.tabs button[aria-selected="true"]'); if (D && t) redraw(t.dataset.tab); }, 200); });
@@ -147,22 +196,119 @@
     f.shows.forEach((s) => { if (!seen.has(s.id)) seen.set(s.id, []); seen.get(s.id).push(s); });
     return [...seen.entries()].map(([id, ss]) => ({ ev: EV.get(id), ss })).filter((x) => x.ev);
   }
-  function todayCard() {
-    const f = D.forecast[0], g = GRADE[f.grade];
-    const list = showsOf(f).filter((x) => x.ev.tier !== 'SMALL');
-    $('#today-card').innerHTML = `
-      <div>
-        <div class="kicker">오늘 · ${md(f.date)} (${f.dow})${f.holiday ? ' · ' + esc(f.holiday) : ''}</div>
-        <div class="big ${g.cls}"><span class="grade ${g.cls}"><i aria-hidden="true">${g.icon}</i><span>${f.grade}</span></span></div>
-        <div class="meter" aria-hidden="true"><span style="width:${f.p}%;background:${g.color}"></span></div>
-        <div class="kicker">주차장 혼잡·만차 기록이 생길 확률 <b>${f.p}%</b></div>
-      </div>
-      <div>
-        <div class="chips">${(f.factors.length ? f.factors : ['특별한 혼잡 요인 없음']).map((x) => `<span class="chip">${esc(x)}</span>`).join('')}</div>
-        <p>${list.length ? `오늘 주요 공연: ${list.map((x) => `<b>${esc(x.ev.title)}</b> (${esc(TIER_SHORT[x.ev.tier])} ${x.ss.map((s) => hm(s.start)).join('·')})`).join(', ')}` : '오늘은 대·중형 공연장 공연이 없습니다.'}</p>
-        <p class="muted">확률은 2025년 2월~2026년 1월 주차장 혼잡도 기록 ${D.model.nDays}일치를 요일·공휴일·날씨·공연 일정으로 학습한 결과입니다. 주말·공휴일은 ${F.m.offRate}%, 평일은 ${F.m.workRate}%의 날에 혼잡·만차 기록이 있었습니다.</p>
-      </div>`;
+  function hero() {
+    const f0 = D.forecast[0], P = D.parking, M = D.model;
+    $('#headline').innerHTML = ['올림픽공원,', null, '언제', '가면', '덜', '붐빌까.'].map((w, i) => (w ? `<span class="w" style="--i:${i}">${w}</span>` : '<br>')).join(' ');
+    const soon = D.forecast.slice(0, 14);
+    const busy = soon.reduce((a, b) => (b.p > a.p ? b : a));
+    const banded = soon.filter((f) => f.hi.some((v, i) => v !== f.lo[i]));
+    const feat = banded.length ? banded.reduce((a, b) => (Math.max(...b.hi) > Math.max(...a.hi) ? b : a)) : busy;
+    const domeDay = D.forecast.find((f) => f.shows.some((s) => s.tier === 'DOME'));
+    const cards = [
+      `<button class="hcard" data-pick="${f0.date}"><span class="k">오늘 · ${md(f0.date)} (${f0.dow})</span><span class="v">${gradeHtml(f0.grade)}<small>혼잡 확률 ${f0.p}%</small></span><span class="s">${esc(f0.factors.join(' · ') || '특별한 혼잡 요인 없음')}</span></button>`,
+      `<button class="hcard" data-pick="${busy.date}"><span class="k">2주 안에 가장 붐빌 날</span><span class="v">${gradeHtml(busy.grade)}<small>${md(busy.date)} (${busy.dow}) · ${busy.p}%</small></span><span class="s">${esc(busy.factors.join(' · '))}</span></button>`,
+    ];
+    if (domeDay) {
+      const s = domeDay.shows.filter((x) => x.tier === 'DOME').pop(), ev = EV.get(s.id);
+      cards.push(`<button class="hcard" data-planid="${s.id}" data-plandate="${domeDay.date}"><span class="k">다음 KSPO DOME 공연 · ${md(domeDay.date)} (${domeDay.dow})</span><span class="v">${hm(s.start - F.arr[1] / 60)}<small>이전 도착 권장</small></span><span class="s">${esc(ev ? ev.title : '')}</span></button>`);
+    }
+    $('#hero-cards').innerHTML = cards.map((c, i) => c.replace('class="hcard"', `class="hcard" data-reveal style="--d:${(0.55 + i * 0.1).toFixed(2)}s"`)).join('');
+    $('#hero-cards').addEventListener('click', (e) => {
+      const b = e.target.closest('.hcard');
+      if (!b) return;
+      if (b.dataset.pick) { pickDate(b.dataset.pick); $('#step2').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      else { show('planner', true); pickShow(+b.dataset.planid, b.dataset.plandate); }
+    });
+    $('#hero-note').textContent = `배경의 점은 ${md(feat.date)}(${feat.dow})의 시간대별 예상 주차 대수입니다. 흰 점은 하한, 주황 점은 주차형 공연일 때의 상한까지.`;
+    dots(feat);
+
+    const up = upcoming();
+    const item = ({ ev }) => `<span class="it"><span class="badge ${ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[ev.tier])}</span><b>${esc(ev.title)}</b>${ev.begin === ev.end ? md(ev.begin) : `${md(ev.begin)} ~ ${md(ev.end)}`}</span>`;
+    $('#marquee').innerHTML = `<div class="track" style="animation-duration:${Math.max(30, up.length * 7)}s">${up.map(item).join('')}<span aria-hidden="true" style="display:contents">${up.map(item).join('')}</span></div>`;
+
+    const st = [
+      ['분석한 실제 입출차 기록', P.rows, '건', '2024년 7월 한 달 치를 5분 단위 주차 대수로 복원했습니다'],
+      ['주말·휴일에 혼잡 기록이 생긴 비율', M.facts.offRate, '%', `평일은 ${M.facts.workRate}%. 혼잡의 주원인은 주말 낮 나들이였습니다`],
+      ['공연 날 관측된 최대 주차 대수', P.peakAll.value, '대', `전체 주차면 약 ${num(D.meta.capacity)}대의 ${P.peakAll.capShare}%, 평소의 ${F.pkPeak}배`],
+      ['종료 후 30분 안에 나가는 공연 주차 차량', F.exitShareAll, '%', '45분만 늦추면 가장 붐비는 구간을 피합니다'],
+    ];
+    $('#stats').innerHTML = st.map((x, i) => `<div class="stat" data-reveal style="--d:${(i * 0.08).toFixed(2)}s"><div class="lab">${x[0]}</div><div class="num"><span data-count="${x[1]}">0</span><small>${x[2]}</small></div><div class="desc">${esc(x[3])}</div></div>`).join('');
+    $('#cal-sub').textContent = `날짜를 누르면 시간대별 예상과 방문 가이드가 열립니다. 확률은 주차장 혼잡도 기록 ${M.nDays}일치를 요일·공휴일·날씨·공연 일정으로 학습한 결과입니다.`;
   }
+
+  /* 히어로 배경: 예보 데이터를 도트 매트릭스로 그린다(이미지 파일 없음) */
+  function dots(feat) {
+    const cv = $('#dots'), ctx = cv.getContext('2d'), heroEl = cv.parentElement;
+    const S = { t0: performance.now(), hover: -1, on: true, last: 0 };
+    const at = (arr, h) => { const i = Math.max(0, Math.min(22.999, h)), a = Math.floor(i); return arr[a] + (arr[a + 1] - arr[a]) * (i - a); };
+    function size() {
+      const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+      cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      S.w = r.width; S.h = r.height; S.wm = $('.wordmark').offsetHeight;
+    }
+    function draw(now) {
+      const { w, h } = S, gap = w < 640 ? 9 : 10, cols = Math.floor(w / gap), rows = Math.floor(h / gap);
+      // 차트 꼭대기 = 전체 주차면(가득 차면 화면 위쪽 눈금선에 닿는다)
+      const base = h - S.wm * 0.42, top = Math.max(118, h * 0.14), cap = D.meta.capacity, capRow = Math.round((top - gap / 2) / gap);
+      const prog = REDUCE ? 1 : Math.min(1, (now - S.t0) / 2400);
+      ctx.clearRect(0, 0, w, h);
+      for (let c = 0; c < cols; c++) {
+        const x = c * gap + gap / 2, hour = (c / (cols - 1)) * 23;
+        const yLo = base - (at(feat.lo, hour) / cap) * (base - top), yHi = base - (at(feat.hi, hour) / cap) * (base - top);
+        const shown = c / cols <= prog * 1.05, near = S.hover >= 0 ? Math.max(0, 1 - Math.abs(c - S.hover) / 2.5) : 0;
+        for (let r = 0; r < rows; r++) {
+          const y = r * gap + gap / 2;
+          let a = 0.07, rad = 0.9, col = '241,242,243';
+          if (shown && r === capRow && c / cols > 0.5) { a = 0.42; rad = 1.1; }
+          if (shown && y <= base + gap) {
+            const tw = REDUCE ? 0.5 : 0.5 + 0.5 * Math.sin(now / 900 + c * 0.33 + r * 0.61);
+            if (y >= yLo) { a = 0.5 + 0.3 * (1 - (y - yLo) / Math.max(1, base - yLo)) + 0.2 * tw; rad = 2.1; }
+            else if (y >= yHi) { a = 0.4 + 0.3 * tw; rad = 1.8; col = '236,110,58'; }
+          }
+          if (near) { a = Math.min(1, a + 0.35 * near); rad += 0.5 * near; }
+          ctx.fillStyle = `rgba(${col},${a.toFixed(3)})`;
+          ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.2832); ctx.fill();
+        }
+      }
+      ctx.font = '500 12px "Pretendard Variable", system-ui, sans-serif'; ctx.fillStyle = 'rgba(241,242,243,.62)'; ctx.textAlign = 'center';
+      if (w >= 700 && prog >= 1) {
+        for (let hh = 12; hh <= 21; hh += 3) ctx.fillText(`${hh}시`, (hh / 23) * (cols - 1) * gap + gap / 2, capRow * gap + gap / 2 + 22);
+        ctx.textAlign = 'right';
+        ctx.fillText(`전체 주차면 약 ${num(cap)}대`, w - 22, capRow * gap + gap / 2 - 10);
+        ctx.textAlign = 'center';
+      }
+      if (S.hover >= 0 && prog >= 1) {
+        const hour = (S.hover / (cols - 1)) * 23, lo = Math.round(at(feat.lo, hour)), hi = Math.round(at(feat.hi, hour));
+        const label = `${hm(hour)} · ${hi > lo ? `${num(lo)}~${num(hi)}대` : `${num(lo)}대`}`;
+        const x = Math.min(w - 90, Math.max(90, S.hover * gap)), y = base - (hi / cap) * (base - top) - 16;
+        ctx.font = '600 13px "Pretendard Variable", system-ui, sans-serif';
+        const tw = ctx.measureText(label).width + 20;
+        ctx.fillStyle = 'rgba(241,242,243,.95)'; ctx.beginPath(); ctx.roundRect(x - tw / 2, y - 22, tw, 26, 13); ctx.fill();
+        ctx.fillStyle = '#0d0d0d'; ctx.fillText(label, x, y - 4);
+      }
+    }
+    function loop(now) {
+      if (!S.on) return;
+      if (now - S.last > 40) { S.last = now; draw(now); }
+      if (!REDUCE || now - S.t0 < 100) requestAnimationFrame(loop);
+    }
+    const start = () => { if (!S.on) { S.on = true; requestAnimationFrame(loop); } };
+    size();
+    requestAnimationFrame(loop);
+    heroEl.addEventListener('pointermove', (e) => {
+      const r = cv.getBoundingClientRect(), gap = S.w < 640 ? 9 : 11;
+      S.hover = Math.round((e.clientX - r.left) / gap);
+      if (REDUCE) draw(performance.now());
+    });
+    heroEl.addEventListener('pointerleave', () => { S.hover = -1; if (REDUCE) draw(performance.now()); });
+    window.addEventListener('resize', () => { size(); draw(performance.now()); });
+    if ('IntersectionObserver' in window) new IntersectionObserver((en) => { if (en[0].isIntersecting) start(); else S.on = false; }).observe(heroEl);
+    S.resize = () => { size(); draw(performance.now()); };
+    dots.state = S;
+    setTimeout(() => { if (S.w) S.resize(); $('#headline').classList.add('done'); }, 2700);
+  }
+
   function calendar() {
     legend($('#grade-legend'), []);
     $('#grade-legend').innerHTML = Object.keys(GRADE).map((g) => `<span>${gradeHtml(g)} <span class="muted">${D.model.gradeCalibration.find((c) => c.grade === g).range}</span></span>`).join('') + '<span class="muted">칸 아래 글자는 그날의 대·중형 공연장</span>';
@@ -191,7 +337,9 @@
     const hasBand = f.hi.some((v, i) => v !== f.lo[i]);
     const wx = f.tmax == null ? '' : ` · ${f.wxSrc === '예보' ? '예보' : '평년 기준'} 최고 ${f.tmax}℃${f.rain >= 1 ? `, 비 ${f.rain}mm` : ''}`;
     let html = `<div class="card-head"><h2>${md(f.date)} (${f.dow}) ${gradeHtml(f.grade)} <span class="muted small">혼잡 기록 확률 ${f.p}%${wx}</span></h2></div>`;
-    html += `<h3>시간대별 예상 주차 대수</h3><div class="legend">${hasBand ? '<span><i class="sw line" style="background:var(--s2)"></i>주차형 공연일 때(상한)</span><span><i class="sw line" style="background:var(--s1)"></i>승하차형 공연일 때(하한)</span>' : '<span><i class="sw line" style="background:var(--s1)"></i>예상 주차 대수</span>'}</div><div id="c-day"></div>`;
+    html += `<h3>시간대별 예상 주차 대수</h3><div class="legend">${hasBand ? '<span><i class="sw line" style="background:var(--s2)"></i>주차형 공연일 때(상한)</span><span><i class="sw line" style="background:var(--s1)"></i>승하차형 공연일 때(하한)</span>' : '<span><i class="sw line" style="background:var(--s1)"></i>예상 주차 대수</span>'}</div><div id="c-day"></div>
+      <div class="arrive"><div class="q">도착 시각을 움직여 보세요</div><div class="big" id="arr-big"></div><span class="verdict" id="arr-verdict"></span>
+      <input type="range" id="arr" min="5" max="23" step="0.5" aria-label="도착 시각"><div class="ticks"><span>05시</span><span>08</span><span>11</span><span>14</span><span>17</span><span>20</span><span>23시</span></div></div>`;
     html += '<p class="note">2024년 7월 실제 입출차 기록의 시간대별 주차 대수에 월별 주차 실적(2023~2025)의 계절 차이를 곱한 값입니다. KSPO DOME 공연일은 같은 달 공연일 7일에서 관측된 초과 주차 대수를 공연 시작 시각에 맞춰 더했으며, 관객 구성에 따라 차이가 커서 범위로 보여 드립니다.</p>';
     if (sh.length) {
       html += '<h3 style="margin-top:14px">이날의 공연</h3><ul class="shows">' + sh.map((x) => `<li><span class="badge ${x.ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[x.ev.tier])}</span><b>${esc(x.ev.title)}</b><span class="muted">${x.ss.map((s) => `${hm(s.start)}~${hm(s.end)}${s.durKnown ? '' : '(종료 추정)'}`).join(', ')}</span>${x.ev.tier !== 'SMALL' && x.ev.end >= D.meta.today ? `<a href="#planner" data-plan="${x.ev.id}">플래너로 보기</a>` : ''}</li>`).join('') + '</ul>';
@@ -212,12 +360,35 @@
     const hrs = [...Array(24).keys()];
     const vl = [], seen = new Set();
     f.shows.filter((s) => s.tier !== 'SMALL').forEach((s) => { const k = Math.round(s.start); if (!seen.has(k)) { seen.add(k); vl.push({ x: s.start, label: `${TIER_SHORT[s.tier]} ${hm(s.start)}`, row: vl.length }); } });
-    lines($('#c-day'), {
-      x: hrs, xfmt: (h) => `${h}시`, ymax: 3000, endLabels: false,
+    const chart = (mk) => lines($('#c-day'), {
+      x: hrs, xfmt: (h) => `${h}시`, ymax: 3000, endLabels: false, marker: mk,
       series: hasBand ? [{ name: '주차형(상한)', values: f.hi, color: 'var(--s2)' }, { name: '승하차형(하한)', values: f.lo, color: 'var(--s1)' }] : [{ name: '예상 주차 대수', values: f.lo, color: 'var(--s1)' }],
       band: hasBand ? { lo: f.lo, hi: f.hi } : null, vlines: vl, hline: { y: D.meta.capacity, label: `전체 주차면 약 ${num(D.meta.capacity)}대` },
       tipfn: (i) => `${i}시\n예상 주차 대수: ${hasBand ? `${num(f.lo[i])}~${num(f.hi[i])}대` : num(f.lo[i]) + '대'}\n(전체의 ${Math.round((f.lo[i] / D.meta.capacity) * 100)}${hasBand ? '~' + Math.round((f.hi[i] / D.meta.capacity) * 100) : ''}%)`,
     });
+    const ds = dome.length ? dome[dome.length - 1] : null, cap = D.meta.capacity, dayMax = Math.max(...f.hi);
+    const arr = $('#arr');
+    const init = ds ? ds.start - F.arr[1] / 60 : f.date === D.meta.today ? new Date().getHours() : 11;
+    arr.value = Math.min(23, Math.max(5, Math.round(init * 2) / 2));
+    const upd = () => {
+      const h = +arr.value, iv = (v) => { const a = Math.floor(h), b = Math.min(23, a + 1); return Math.round(v[a] + (v[b] - v[a]) * (h - a)); };
+      const lo = iv(f.lo), hi = iv(f.hi), pl = Math.round((lo / cap) * 100), ph = Math.round((hi / cap) * 100);
+      $('#arr-big').innerHTML = `${hm(h)} 도착<small>예상 주차 ${hi > lo ? `${num(lo)}~${num(hi)}대 · 전체의 ${pl}~${ph}%` : `${num(lo)}대 · 전체의 ${pl}%`}</small>`;
+      let v = hi >= dayMax * 0.9 ? '이날 가장 붐비는 시간대' : hi <= dayMax * 0.5 ? '여유 있는 시간대' : '보통 수준';
+      if (ds) {
+        const m = (ds.start - h) * 60, pts = [[360, 0], [F.arr[0], 10], [F.arr[1], 25], [F.arr[2], 50], [F.arr[3], 75], [F.arr[4], 90], [0, 100]];
+        if (m <= 0) v = 'KSPO DOME 공연 시작 이후';
+        else {
+          let got = 0;
+          for (let i = 0; i < pts.length - 1; i++) if (m <= pts[i][0] && m >= pts[i + 1][0]) got = pts[i][1] + ((pts[i][0] - m) / (pts[i][0] - pts[i + 1][0])) * (pts[i + 1][1] - pts[i][1]);
+          v = `KSPO DOME 공연 주차 차량의 약 ${Math.round(100 - got)}%보다 먼저 도착`;
+        }
+      }
+      $('#arr-verdict').textContent = v;
+      chart(h);
+    };
+    arr.addEventListener('input', upd);
+    upd();
     $('#day-detail').querySelectorAll('[data-plan]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('planner'); pickShow(+a.dataset.plan, selDate); window.scrollTo(0, 0); }));
   }
 
@@ -354,7 +525,7 @@
     const hours = [...Array(14).keys()].map((i) => i + 8), zmax = Math.max(...C.zones.flatMap((z) => z.hours));
     const order = C.domino.map((d) => d.zone), zs = [...C.zones].sort((a, b) => order.indexOf(a.zone) - order.indexOf(b.zone));
     $('#c-zone').innerHTML = `<div class="table-wrap"><table class="heat"><thead><tr><th class="z">먼저 차는 순</th>${hours.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>` +
-      zs.map((z, i) => `<tr><th class="z">${i + 1}. ${z.zone}</th>${z.hours.map((v, j) => { const k = v ? Math.min(SEQ.length - 1, Math.round((v / zmax) * (SEQ.length - 1))) : -1; return `<td style="background:${k < 0 ? '#f3f2ee' : SEQ[k]};color:${k >= 6 ? '#fff' : '#0b0b0b'}" data-tip="${z.zone} · ${hours[j]}시대 혼잡·만차 기록 ${v}건">${v || ''}</td>`; }).join('')}</tr>`).join('') + '</tbody></table></div>';
+      zs.map((z, i) => `<tr><th class="z">${i + 1}. ${z.zone}</th>${z.hours.map((v, j) => { const k = v ? Math.min(SEQ.length - 1, Math.round((v / zmax) * (SEQ.length - 1))) : -1; return `<td style="background:${k < 0 ? 'rgba(241,242,243,.05)' : SEQ[k]};color:${k >= 7 ? '#0b0b0b' : '#fff'}" data-tip="${z.zone} · ${hours[j]}시대 혼잡·만차 기록 ${v}건">${v || ''}</td>`; }).join('')}</tr>`).join('') + '</tbody></table></div>';
     $('#n-zone').textContent = `${F.first.join('·')} 구역이 가장 먼저, ${F.last.join('·')} 구역이 가장 늦게 기록됩니다. 기록의 ${F.peakHourShare}%가 13~15시에 몰려 있고, 한 번 혼잡해진 구역이 "원활"로 돌아오기까지 중앙값 ${C.relief.medianHours}시간이 걸렸습니다(${C.relief.n}건, 시간 단위).`;
 
     const mr = M.facts.offMonthRate;
@@ -428,6 +599,6 @@
     EV = new Map(D.events.map((e) => [e.id, e]));
     facts();
     $('#loading').remove();
-    todayCard(); calendar(); selDate = D.forecast[0].date; showList(); dataTab(); tabs(); pickDate(selDate);
+    hero(); calendar(); selDate = D.forecast[0].date; showList(); dataTab(); tabs(); pickDate(selDate); observe();
   }).catch((e) => { $('#loading').textContent = '데이터를 불러오지 못했습니다: ' + e.message; });
 })();
