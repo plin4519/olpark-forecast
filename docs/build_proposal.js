@@ -12,7 +12,10 @@ const F = JSON.parse(fs.readFileSync(path.join(DIR, 'findings.json'), 'utf8'));
 const DEMO = process.env.DEMO_URL || '(제출 전 배포 주소 기입)';
 const REPO = process.env.REPO_URL || '(제출 전 저장소 주소 기입)';
 const FONT = '맑은 고딕', NAVY = '0D366B', GRAY = '52514E', LINE = 'C3C2B7', FILL = 'EEF3FA';
-const W = 9638; // A4(11906) - 좌우 여백 1134*2
+// FRAG=1: 공식 서식(docx)의 표 칸에 넣을 조각을 만든다. 제목은 표식(@@H1|..@@)으로, 글머리표는 문자로 낸다.
+const FRAG = !!process.env.FRAG;
+const W = FRAG ? 9360 : 9638; // A4(11906) - 좌우 여백 1134*2 (조각 모드는 서식 표 칸 안쪽 폭)
+const mark = (t) => new Paragraph({ children: [new TextRun({ text: `@@${t}@@`, font: '맑은 고딕' })] });
 const n = (v) => Number(v).toLocaleString('ko-KR');
 const P = F.parking, C = F.congestion, M = F.model;
 const pk = P.dome.filter((d) => d.type === 'parking'), dr = P.dome.filter((d) => d.type === 'dropoff');
@@ -30,10 +33,12 @@ function runs(text, base = {}) {
     t.startsWith('**') ? new TextRun({ text: t.slice(2, -2), bold: true, font: FONT, ...base }) : new TextRun({ text: t, font: FONT, ...base }));
 }
 const p = (text, o = {}) => new Paragraph({ children: runs(text, o.run), spacing: { before: 0, after: o.after ?? 100, line: 320 }, alignment: o.align, keepNext: o.keepNext });
-const h1 = (text) => new Paragraph({ children: [new TextRun({ text, bold: true, size: 28, color: NAVY, font: FONT })], spacing: { before: 260, after: 120 }, keepNext: true,
+const h1 = (text) => FRAG ? mark('H1|' + text) : new Paragraph({ children: [new TextRun({ text, bold: true, size: 28, color: NAVY, font: FONT })], spacing: { before: 260, after: 120 }, keepNext: true,
   border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: NAVY, space: 3 } } });
-const h2 = (text) => new Paragraph({ children: [new TextRun({ text, bold: true, size: 23, font: FONT })], spacing: { before: 180, after: 80 }, keepNext: true });
-const b = (text) => new Paragraph({ children: runs(text), numbering: { reference: 'bul', level: 0 }, spacing: { before: 0, after: 50, line: 310 } });
+const h2 = (text) => FRAG ? mark('H2|' + text) : new Paragraph({ children: [new TextRun({ text, bold: true, size: 23, font: FONT })], spacing: { before: 180, after: 80 }, keepNext: true });
+const b = (text) => FRAG
+  ? new Paragraph({ children: runs('• ' + text), indent: { left: 300, hanging: 190 }, spacing: { before: 0, after: 50, line: 310 } })
+  : new Paragraph({ children: runs(text), numbering: { reference: 'bul', level: 0 }, spacing: { before: 0, after: 50, line: 310 } });
 const cap = (text) => new Paragraph({ children: [new TextRun({ text, size: 18, color: GRAY, font: FONT })], alignment: AlignmentType.CENTER, spacing: { before: 40, after: 140 } });
 const img = (file, wpx, caption) => {
   const buf = fs.readFileSync(path.join(DIR, 'img', file));
@@ -43,6 +48,7 @@ const img = (file, wpx, caption) => {
 };
 const border = { style: BorderStyle.SINGLE, size: 4, color: LINE };
 function table(rows, widths, { header = true, size = 20 } = {}) {
+  if (FRAG && !header && !table.sum) { table.sum = rows; return mark('SUMTABLE'); } // 요약서 표는 서식의 칸에 문단으로 옮긴다
   const tot = widths.reduce((a, c) => a + c, 0), ws = widths.map((w) => Math.round((w / tot) * W));
   ws[ws.length - 1] += W - ws.reduce((a, c) => a + c, 0);
   return new Table({
@@ -213,6 +219,11 @@ add(table([
   ['(신규) 공연별 관객 규모', '입장 인원·연령대 분포 없음', '주차형·승하차형 사전 판별, 승하차 구역 운영'],
 ], [24, 46, 30]));
 
+if (FRAG) {
+  // 요약서: 항목별 표식 + 문단. 표지 제목·쪽 나눔·'상세 기획서' 제목(앞 5개 요소)은 서식에 이미 있으므로 뺀다.
+  const sum = table.sum.flatMap(([, content], i) => [mark('SUM|' + (i + 1)), ...String(content).split('\n').map((line) => p(line, { after: 30, run: { size: 20 } }))]);
+  body.splice(0, 5, ...sum);
+}
 const doc = new Document({
   creator: '올팍예보', title: '2026년도 공공데이터 활용 경진대회 기획서 - 올팍예보',
   styles: { default: { document: { run: { font: FONT, size: 22 } } } },
@@ -224,7 +235,7 @@ const doc = new Document({
   }],
 });
 Packer.toBuffer(doc).then((buf) => {
-  const out = path.join(DIR, '기획서_올팍예보.docx');
+  const out = FRAG ? process.env.FRAG_OUT : path.join(DIR, '기획서_올팍예보.docx');
   fs.writeFileSync(out, buf);
   console.log('written', out, buf.length);
 });
