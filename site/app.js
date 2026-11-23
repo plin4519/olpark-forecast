@@ -314,7 +314,8 @@
       const wide = w >= 900, x0 = wide ? w * 0.47 : gap / 2, x1 = wide ? w - 22 : (cols - 1) * gap + gap / 2, H0 = wide ? 5 : 0;
       const X = (hr) => x0 + ((hr - H0) / (23 - H0)) * (x1 - x0), HR = (x) => H0 + ((x - x0) / (x1 - x0)) * (23 - H0);
       // 차트 꼭대기 = 일반 주차면(가득 차면 위쪽 눈금선에 닿는다). 바닥은 첫 화면 안에 들어오게 한다.
-      const base = Math.min(h - S.wm * 0.42, window.innerHeight - 26), top = Math.max(150, Math.min(h, window.innerHeight) * (w >= 1100 ? 0.37 : 0.24)), cap = F.cap, capRow = Math.round((top - gap / 2) / gap);
+      const vh = Math.max(window.innerHeight, 620); // 창이 아주 낮을 때 그래프가 글 위로 눌려 올라오지 않게 한다
+      const base = Math.min(h - S.wm * 0.42, vh - 26), top = Math.max(150, Math.min(h, vh) * (w >= 1100 ? 0.37 : 0.24)), cap = F.cap, capRow = Math.round((top - gap / 2) / gap);
       const prog = REDUCE ? 1 : Math.min(1, (now - S.t0) / 2400), hov = S.px >= x0 && S.px <= x1 && prog >= 1;
       const Y = (v) => base - (v / cap) * (base - top);
       ctx.clearRect(0, 0, w, h);
