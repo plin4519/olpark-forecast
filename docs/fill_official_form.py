@@ -85,7 +85,25 @@ def set_cell(tc, elems):
         tc.append(mk_p("", size=4, after=0, line=120))
 
 
-def fill_applicant(t_app, t_consent, a):
+SIGN_XML = (
+    '<w:r xmlns:w="%s" xmlns:r="%s"><w:drawing>'
+    '<wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0">'
+    '<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{id}" name="서명 {id}"/>'
+    '<a:graphic xmlns:a="%s"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+    '<pic:nvPicPr><pic:cNvPr id="{id}" name="sign.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+    '<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+    '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>'
+) % (W_NS, R_NS, A_NS)
+
+
+def sign_run(rid, n, width_cm, ratio):
+    cx = int(width_cm * 360000)
+    return etree.fromstring(SIGN_XML.format(cx=cx, cy=int(cx / ratio), id=9000 + n, rid=rid))
+
+
+def fill_applicant(t_app, t_consent, a, sign=None):
     """신청인 인적사항·날짜·동의 표시를 채운다(서명 칸은 비워 둔다). a: 저장소에 올리지 않는 별도 JSON."""
     rows = t_app.findall(W + "tr")
 
@@ -107,7 +125,20 @@ def fill_applicant(t_app, t_consent, a):
         if re.sub(r"\s", "", s) == "2026년월일":
             ts[-1].text = f"{y}년 {int(m)}월 {int(d)}일"
         elif "신청인" in s and "(인)" in s:
-            ts[-1].text = re.sub(r"신청인\s+\(인\)", f"신청인    {a['name']}    (인)", ts[-1].text)
+            if not sign:
+                ts[-1].text = re.sub(r"신청인\s+\(인\)", f"신청인    {a['name']}    (인)", ts[-1].text)
+                continue
+            # 이름 뒤에 서명 그림을 넣고 (인)을 그 뒤에 둔다. 줄 간격 '고정'이면 그림이 잘리므로 '자동'으로 바꾼다.
+            lead = re.match(r"\s*", ts[-1].text).group(0)
+            ts[-1].text = lead[: max(0, len(lead) - 14)] + f"신청인    {a['name']}  "
+            run = ts[-1].getparent()
+            tail = copy.deepcopy(run)
+            next(tail.iter(W + "t")).text = " (인)"
+            run.addnext(sign(1, 2.3))
+            run.getnext().addnext(tail)
+            for sp in p.iter(W + "spacing"):
+                sp.set(W + "lineRule", "auto")
+                sp.set(W + "line", "240")
     crow = t_consent.findall(W + "tr")
     for p in crow[0].iter(W + "p"):  # 동의서 날짜
         ts = list(p.iter(W + "t"))
@@ -119,6 +150,10 @@ def fill_applicant(t_app, t_consent, a):
             if t.text:
                 t.text = t.text.replace("□ 동의", "☑ 동의", 1)
     put(cells[1], a["name"])
+    if sign:
+        para = mk_p("", size=10, align="center", after=0, line=240)
+        para.append(sign(2, 1.9))
+        set_cell(cells[2], [para])
 
 
 def main(form_path, frag_path, out_path, applicant_path=None):
@@ -170,14 +205,12 @@ def main(form_path, frag_path, out_path, applicant_path=None):
                 r.set("Type", R_NS + "/image")
                 r.set("Target", name)
                 blip.set("{%s}embed" % R_NS, f"rIdOlp{n_img}")
-    files["word/_rels/document.xml.rels"] = etree.tostring(rels, xml_declaration=True, encoding="UTF-8", standalone=True)
     ct = etree.fromstring(files["[Content_Types].xml"])
     if not any(d.get("Extension") == "png" for d in ct.findall("{%s}Default" % CT_NS)):
         d = etree.Element("{%s}Default" % CT_NS)
         d.set("Extension", "png")
         d.set("ContentType", "image/png")
         ct.insert(0, d)
-    files["[Content_Types].xml"] = etree.tostring(ct, xml_declaration=True, encoding="UTF-8", standalone=True)
 
     # ── 서식의 주요 요소 찾기 ──
     tables = [e for e in body if e.tag == W + "tbl"]
@@ -218,7 +251,20 @@ def main(form_path, frag_path, out_path, applicant_path=None):
         import json
         import pathlib
         t_consent = find(lambda s, t: s.startswith("1. 개인정보"))
-        fill_applicant(t_app, t_consent, json.loads(pathlib.Path(applicant_path).read_text(encoding="utf-8")))
+        a = json.loads(pathlib.Path(applicant_path).read_text(encoding="utf-8"))
+        sign = None
+        if a.get("signature"):
+            from PIL import Image
+            sig = pathlib.Path(a["signature"])
+            w_px, h_px = Image.open(sig).size
+            files["word/media/olpark_sign.png"] = sig.read_bytes()
+            order.append("word/media/olpark_sign.png")
+            r = etree.SubElement(rels, "{%s}Relationship" % PR_NS)
+            r.set("Id", "rIdOlpSign")
+            r.set("Type", R_NS + "/image")
+            r.set("Target", "media/olpark_sign.png")
+            sign = lambda n, width_cm: sign_run("rIdOlpSign", n, width_cm, w_px / h_px)
+        fill_applicant(t_app, t_consent, a, sign)
 
     # 서약서(표의 마지막 두 줄)는 쪽 사이에서 쪼개지지 않게 한 덩어리로 넘긴다
     for kn in rows[-2].iter(W + "keepNext"):
@@ -276,6 +322,8 @@ def main(form_path, frag_path, out_path, applicant_path=None):
     missing = [k for k in plan.values() if k not in filled]
     assert not missing, f"채우지 못한 칸: {missing}"
 
+    files["word/_rels/document.xml.rels"] = etree.tostring(rels, xml_declaration=True, encoding="UTF-8", standalone=True)
+    files["[Content_Types].xml"] = etree.tostring(ct, xml_declaration=True, encoding="UTF-8", standalone=True)
     files["word/document.xml"] = etree.tostring(doc, xml_declaration=True, encoding="UTF-8", standalone=True)
     with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zout:
         for name in dict.fromkeys(order):
