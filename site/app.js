@@ -50,7 +50,7 @@
     values.forEach((v, i) => {
       const h = ((H - m.b - m.t) * v) / max, x = m.l + bw * i + (bw - w) / 2, y = H - m.b - h, r = Math.min(4, h);
       const c = colors[kinds ? kinds[i] : 0];
-      s += `<path d="M${x},${H - m.b}V${y + r}q0,${-r} ${r},${-r}h${w - 2 * r}q${r},0 ${r},${r}V${H - m.b}z" fill="${c}"/>`;
+      s += `<path d="M${x},${H - m.b}V${y + r}q0,${-r} ${r},${-r}h${w - 2 * r}q${r},0 ${r},${r}V${H - m.b}z" fill="${c}" class="grow" style="animation-delay:${Math.min(i * 14, 420)}ms"/>`;
       if (valueLabels && valueLabels[i]) s += `<text class="lbl" x="${x + w / 2}" y="${y - 4}" text-anchor="middle">${esc(valueLabels[i])}</text>`;
       if (i % xEvery === 0) s += `<text x="${x + w / 2}" y="${H - 7}" text-anchor="middle">${esc(labels[i])}</text>`;
       s += `<rect class="hit" x="${m.l + bw * i}" y="${m.t}" width="${bw}" height="${H - m.b - m.t}" data-tip="${esc(tips ? tips[i] : `${labels[i]}: ${fmt(v)}`)}"/>`;
@@ -58,7 +58,7 @@
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${s}</svg>`;
   }
   /* 선 그래프: series=[{name, values, color}], band={lo,hi}, vlines=[{x,label}], hline={y,label} */
-  function lines(el, { x, series, band, vlines = [], hline, H = 230, ymax, xEvery = 3, xfmt = (v) => v, tipfn, endLabels = true, marker }) {
+  function lines(el, { x, series, band, vlines = [], hline, H = 230, ymax, xEvery = 3, xfmt = (v) => v, tipfn, endLabels = true, marker, animate = true }) {
     const W = Math.max(300, Math.round(el.clientWidth) || 720), m = { l: 46, r: endLabels ? 60 : 12, t: 16, b: 24 };
     xEvery = Math.max(xEvery, Math.ceil(34 / ((W - m.l - m.r) / (x.length - 1))));
     const all = series.flatMap((s) => s.values).concat(band ? band.hi : [], hline ? [hline.y] : []);
@@ -69,14 +69,14 @@
     if (hline) s += `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(hline.y)}" y2="${Y(hline.y)}" stroke="var(--ink2)" stroke-width="1"/><text class="lbl" x="${m.l + 4}" y="${Y(hline.y) - 5}">${esc(hline.label)}</text>`;
     if (band) {
       const up = band.hi.map((v, i) => `${X(i)},${Y(v)}`).join(' L'), dn = band.lo.map((v, i) => `${X(i)},${Y(v)}`).reverse().join(' L');
-      s += `<path d="M${up} L${dn} Z" fill="var(--s1)" opacity="0.2"/>`;
+      s += `<path d="M${up} L${dn} Z" fill="var(--s1)" opacity="0.2"${animate ? ' class="fade"' : ''}/>`;
     }
     vlines.forEach((v) => {
       s += `<line x1="${X(v.x)}" x2="${X(v.x)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--axis)" stroke-width="1"/><text class="lbl" x="${X(v.x) + (X(v.x) > W * 0.6 ? -5 : 5)}" y="${m.t + (v.row || 0) * 14 + 8}" text-anchor="${X(v.x) > W * 0.6 ? 'end' : 'start'}">${esc(v.label)}</text>`;
     });
     const ends = [];
     series.forEach((sr) => {
-      s += `<path d="M${sr.values.map((v, i) => `${X(i)},${Y(v)}`).join(' L')}" fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      s += `<path d="M${sr.values.map((v, i) => `${X(i)},${Y(v)}`).join(' L')}" fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${animate ? ' class="draw" pathLength="1"' : ''}/>`;
       const li = sr.values.length - 1;
       s += `<circle cx="${X(li)}" cy="${Y(sr.values[li])}" r="4" fill="${sr.color}" stroke="var(--surface)" stroke-width="2"/>`;
       ends.push({ y: Y(sr.values[li]), name: sr.name });
@@ -128,24 +128,43 @@
   }
 
   /* ---------- 탭 ---------- */
+  const setHash = (h) => history.replaceState(null, '', '#' + h);
+  const poster = (ev, cls = '') => `<span class="ph ${cls} t-${ev.tier}">${ev.img ? `<img src="${esc(ev.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
   function tabs() {
     document.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab, true)));
     document.addEventListener('click', (e) => {
+      const pl = e.target.closest('[data-planid]');
+      if (pl) { e.preventDefault(); show('planner', true); pickShow(+pl.dataset.planid, pl.dataset.plandate); return; }
+      const pk = e.target.closest('[data-pick]');
+      if (pk) { pickDate(pk.dataset.pick); $('#step2').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
       const g = e.target.closest('[data-go]');
       if (g) { e.preventDefault(); show(g.dataset.go, true); return; }
       const sc = e.target.closest('[data-scroll]');
       if (sc) document.querySelector(sc.dataset.scroll).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-    const h = location.hash.replace('#', '');
-    show(['forecast', 'planner', 'insight', 'data'].includes(h) ? h : 'forecast');
+    const [name, a, b] = location.hash.replace('#', '').split('/');
+    const ok = ['forecast', 'planner', 'insight', 'data'].includes(name) ? name : 'forecast';
+    show(ok);
+    if (ok === 'forecast' && a && fc(a)) pickDate(a);
+    if (ok === 'planner' && a && EV.get(+a) && D.forecast.some((f) => f.shows.some((x) => x.id === +a))) pickShow(+a, b);
   }
   function show(name, top) {
     document.querySelectorAll('.tabs button[data-tab]').forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === name));
     document.querySelectorAll('.tab').forEach((s) => { s.hidden = s.id !== 'tab-' + name; });
-    history.replaceState(null, '', '#' + name);
+    setHash(name);
     if (top) window.scrollTo({ top: 0, behavior: 'instant' });
     if (D) redraw(name);
     observe();
+  }
+  // 카드 위에서 커서를 따라다니는 은은한 빛
+  function spotlight() {
+    document.addEventListener('pointermove', (e) => {
+      const c = e.target.closest && e.target.closest('.card, .hcard, .show, .cal-cell, .tile, .pcard, .guide li, .demo, .stat');
+      if (!c) return;
+      const r = c.getBoundingClientRect();
+      c.style.setProperty('--mx', `${e.clientX - r.left}px`);
+      c.style.setProperty('--my', `${e.clientY - r.top}px`);
+    }, { passive: true });
   }
 
   /* ---------- 모션: 블러 인, 숫자 카운트업 ---------- */
@@ -172,7 +191,7 @@
     const vh = window.innerHeight;
     document.querySelectorAll('[data-reveal]:not(.in)').forEach((e) => {
       const r = e.getBoundingClientRect();
-      if (r.width && r.top < vh * 0.94 && r.bottom > 0) { e.classList.add('in'); countUp(e); }
+      if (r.width && r.top < vh * 0.94 && r.bottom > 0) { e.classList.add('in'); countUp(e); setTimeout(() => e.classList.add('settled'), 1700); }
     });
   }
   function observe() {
@@ -204,27 +223,58 @@
     const banded = soon.filter((f) => f.hi.some((v, i) => v !== f.lo[i]));
     const feat = banded.length ? banded.reduce((a, b) => (Math.max(...b.hi) > Math.max(...a.hi) ? b : a)) : busy;
     const domeDay = D.forecast.find((f) => f.shows.some((s) => s.tier === 'DOME'));
+    const up = upcoming();
+
+    // 질문에 대한 답을 한 줄씩 돌려 보여 준다
+    const ans = [f0, ...soon.slice(1).filter((f) => f.grade !== '여유').slice(0, 4)].map((f, i) => `${i ? `${md(f.date)}(${f.dow})` : `오늘(${f.dow})`}은 ${gradeHtml(f.grade)}<small>혼잡 확률 ${f.p}%</small>`);
+    let ai = 0;
+    const setAns = () => { $('#answer').innerHTML = `<span>→ ${ans[ai++ % ans.length]}</span>`; };
+    setAns();
+    if (!REDUCE && ans.length > 1) setInterval(setAns, 2600);
+
     const cards = [
       `<button class="hcard" data-pick="${f0.date}"><span class="k">오늘 · ${md(f0.date)} (${f0.dow})</span><span class="v">${gradeHtml(f0.grade)}<small>혼잡 확률 ${f0.p}%</small></span><span class="s">${esc(f0.factors.join(' · ') || '특별한 혼잡 요인 없음')}</span></button>`,
       `<button class="hcard" data-pick="${busy.date}"><span class="k">2주 안에 가장 붐빌 날</span><span class="v">${gradeHtml(busy.grade)}<small>${md(busy.date)} (${busy.dow}) · ${busy.p}%</small></span><span class="s">${esc(busy.factors.join(' · '))}</span></button>`,
     ];
     if (domeDay) {
       const s = domeDay.shows.filter((x) => x.tier === 'DOME').pop(), ev = EV.get(s.id);
-      cards.push(`<button class="hcard" data-planid="${s.id}" data-plandate="${domeDay.date}"><span class="k">다음 KSPO DOME 공연 · ${md(domeDay.date)} (${domeDay.dow})</span><span class="v">${hm(s.start - F.arr[1] / 60)}<small>이전 도착 권장</small></span><span class="s">${esc(ev ? ev.title : '')}</span></button>`);
+      cards.push(`<button class="hcard with-ph" data-planid="${s.id}" data-plandate="${domeDay.date}">${ev ? poster(ev, 'tiny') : ''}<span class="k">다음 DOME 공연 · ${+domeDay.date.slice(5, 7)}/${+domeDay.date.slice(8)} (${domeDay.dow})</span><span class="v">${hm(s.start - F.arr[1] / 60)}<small>이전 도착 권장</small></span><span class="s">${esc(ev ? ev.title : '')}</span></button>`);
     }
-    $('#hero-cards').innerHTML = cards.map((c, i) => c.replace('class="hcard"', `class="hcard" data-reveal style="--d:${(0.55 + i * 0.1).toFixed(2)}s"`)).join('');
-    $('#hero-cards').addEventListener('click', (e) => {
-      const b = e.target.closest('.hcard');
-      if (!b) return;
-      if (b.dataset.pick) { pickDate(b.dataset.pick); $('#step2').scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-      else { show('planner', true); pickShow(+b.dataset.planid, b.dataset.plandate); }
-    });
+    $('#hero-cards').innerHTML = cards.map((c, i) => c.replace('class="hcard', `data-reveal style="--d:${(0.55 + i * 0.1).toFixed(2)}s" class="hcard`)).join('');
+    $('#hero-posters').innerHTML = up.slice(0, 3).map(({ ev, first }, i) => {
+      const f = fc(first);
+      return `<button class="hp" data-reveal style="--r:${[5, -4, 3][i]}deg;--z:${[22, 13, 6][i]};--d:${(0.7 + i * 0.12).toFixed(2)}s" data-planid="${ev.id}" data-plandate="${first}" aria-label="${esc(ev.title)} 시간표 보기">${poster(ev)}<span class="hp-chip"><span class="grade ${GRADE[f.grade].cls}"><i aria-hidden="true">${GRADE[f.grade].icon}</i></span>${+first.slice(5, 7)}/${+first.slice(8)} ${f.dow} · ${f.p}%</span></button>`;
+    }).join('');
     $('#hero-note').textContent = `배경의 점은 ${md(feat.date)}(${feat.dow})의 시간대별 예상 주차 대수입니다. 흰 점은 하한, 주황 점은 주차형 공연일 때의 상한까지.`;
     dots(feat);
 
-    const up = upcoming();
-    const item = ({ ev }) => `<span class="it"><span class="badge ${ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[ev.tier])}</span><b>${esc(ev.title)}</b>${ev.begin === ev.end ? md(ev.begin) : `${md(ev.begin)} ~ ${md(ev.end)}`}</span>`;
-    $('#marquee').innerHTML = `<div class="track" style="animation-duration:${Math.max(30, up.length * 7)}s">${up.map(item).join('')}<span aria-hidden="true" style="display:contents">${up.map(item).join('')}</span></div>`;
+    // 포스터 레일(공식 공연정보의 포스터를 원본 서버에서 불러온다)
+    const pitem = ({ ev, first }) => {
+      const f = fc(first), s = f.shows.filter((x) => x.id === ev.id).pop();
+      return `<button class="pcard" data-planid="${ev.id}" data-plandate="${first}">${poster(ev)}<span class="pinfo"><span class="pd">${md(first)} (${f.dow}) · ${esc(TIER_SHORT[ev.tier])}</span><b>${esc(ev.title)}</b><span class="pg">${gradeHtml(f.grade)}<small>${f.p}% · ${ev.tier === 'DOME' ? `${hm(s.start - F.arr[1] / 60)} 전 도착` : `${hm(s.start)} 공연`}</small></span></span></button>`;
+    };
+    const rail = up.map(pitem).join('');
+    $('#marquee').innerHTML = `<div class="track" style="animation-duration:${Math.max(40, up.length * 9)}s">${rail}${rail.replaceAll('<button class="pcard"', '<button class="pcard" tabindex="-1" aria-hidden="true"')}</div>`;
+
+    // 사용법: 실제 예보 값으로 움직이는 작은 데모 세 개
+    const cells = D.forecast.slice(0, 21).map((f, i) => `<i class="mc ${f.grade === '혼잡' ? 'r' : f.grade === '보통' ? 'y' : 'g'}${f.date === busy.date ? ' pick' : ''}" style="--i:${i}"></i>`).join('');
+    const poly = (v) => v.map((y, i) => `${((i / 23) * 100).toFixed(1)},${(100 - (y / 3000) * 100).toFixed(1)}`).join(' ');
+    const ds = domeDay ? domeDay.shows.filter((x) => x.tier === 'DOME').pop() : null;
+    const rows = ds ? [[hm(ds.start - F.arr[1] / 60), '이 시각 전 도착'], [hm(ds.start), '공연 시작'], [hm(ds.end), '공연 종료'], [hm(ds.end + 0.75), '여유 출차']] : [['11:00', '이 시각 전 도착'], ['13:00', '가장 붐비는 시간'], ['19:00', '한산해지는 시간']];
+    $('#how-grid').innerHTML = [
+      `<button class="demo" data-scroll="#step1" data-reveal><span class="stage"><span class="mini-cal">${cells}</span></span><span class="dn">01</span><b>날짜를 고르면</b><span class="dd">앞으로 6주, 날짜마다 붐빌 확률이 색과 도형으로 보입니다.</span></button>`,
+      `<button class="demo" data-pick="${feat.date}" data-reveal style="--d:.1s"><span class="stage"><span class="mini-time"><svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline class="lo" points="${poly(feat.lo)}"/><polyline class="hi" points="${poly(feat.hi)}"/></svg><i class="mk" id="demo-mk"></i><span class="read" id="demo-read"></span></span></span><span class="dn">02</span><b>시간을 움직이면</b><span class="dd">그 시각의 예상 주차 대수와 추천 도착 시간이 바로 나옵니다.</span></button>`,
+      `<button class="demo" data-go="planner" data-reveal style="--d:.2s"><span class="stage"><span class="mini-plan">${rows.map(([t, l], i) => `<span class="r" style="--i:${i}"><time>${t}</time>${l}</span>`).join('')}</span></span><span class="dn">03</span><b>시간표를 받는다</b><span class="dd">공연 날에는 도착부터 출차까지, 캘린더 알림으로 내보냅니다.</span></button>`,
+    ].join('');
+    let tt = 2.2;
+    const stepB = () => {
+      tt += 0.014;
+      const h = 8 + (0.5 - 0.5 * Math.cos(tt)) * 14, a = Math.floor(h), v = feat.hi[a] + (feat.hi[Math.min(23, a + 1)] - feat.hi[a]) * (h - a);
+      $('#demo-mk').style.left = `${(h / 23) * 100}%`;
+      $('#demo-read').textContent = `${hm(Math.round(h * 2) / 2)} · ${num(Math.round(v / 10) * 10)}대`;
+    };
+    stepB();
+    if (!REDUCE) setInterval(stepB, 60);
 
     const st = [
       ['분석한 실제 입출차 기록', P.rows, '건', '2024년 7월 한 달 치를 5분 단위 주차 대수로 복원했습니다'],
@@ -236,27 +286,35 @@
     $('#cal-sub').textContent = `날짜를 누르면 시간대별 예상과 방문 가이드가 열립니다. 확률은 주차장 혼잡도 기록 ${M.nDays}일치를 요일·공휴일·날씨·공연 일정으로 학습한 결과입니다.`;
   }
 
-  /* 히어로 배경: 예보 데이터를 도트 매트릭스로 그린다(이미지 파일 없음) */
+  /* 히어로 배경: 예보 데이터를 도트 매트릭스로 그린다(이미지 파일 없음). 커서 위치는 픽셀 단위로 그대로 따라간다. */
   function dots(feat) {
     const cv = $('#dots'), ctx = cv.getContext('2d'), heroEl = cv.parentElement;
-    const S = { t0: performance.now(), hover: -1, on: true, last: 0 };
+    const S = { t0: performance.now(), px: -1, py: -1, on: true, last: 0 };
     const at = (arr, h) => { const i = Math.max(0, Math.min(22.999, h)), a = Math.floor(i); return arr[a] + (arr[a + 1] - arr[a]) * (i - a); };
+    const peakH = feat.hi.indexOf(Math.max(...feat.hi));
     function size() {
       const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
       cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      S.w = r.width; S.h = r.height; S.wm = $('.wordmark').offsetHeight;
+      S.w = r.width; S.h = r.height; S.wm = $('.wordmark').offsetHeight; S.gap = r.width < 640 ? 9 : 10;
+    }
+    function pill(label, x, y) {
+      ctx.font = '600 13px "Pretendard Variable", system-ui, sans-serif';
+      const tw = ctx.measureText(label).width + 22;
+      x = Math.min(S.w - tw / 2 - 8, Math.max(tw / 2 + 8, x));
+      ctx.fillStyle = 'rgba(241,242,243,.96)'; ctx.beginPath(); ctx.roundRect(x - tw / 2, y - 24, tw, 28, 14); ctx.fill();
+      ctx.fillStyle = '#0d0d0d'; ctx.textAlign = 'center'; ctx.fillText(label, x, y - 5);
     }
     function draw(now) {
-      const { w, h } = S, gap = w < 640 ? 9 : 10, cols = Math.floor(w / gap), rows = Math.floor(h / gap);
-      // 차트 꼭대기 = 전체 주차면(가득 차면 화면 위쪽 눈금선에 닿는다)
-      const base = h - S.wm * 0.42, top = Math.max(118, h * 0.14), cap = D.meta.capacity, capRow = Math.round((top - gap / 2) / gap);
-      const prog = REDUCE ? 1 : Math.min(1, (now - S.t0) / 2400);
+      const { w, h, gap } = S, cols = Math.floor(w / gap), rows = Math.floor(h / gap), span = (cols - 1) * gap;
+      // 차트 꼭대기 = 전체 주차면(가득 차면 위쪽 눈금선에 닿는다)
+      const base = h - S.wm * 0.42, top = Math.max(150, h * (w >= 1100 ? 0.3 : 0.2)), cap = D.meta.capacity, capRow = Math.round((top - gap / 2) / gap);
+      const prog = REDUCE ? 1 : Math.min(1, (now - S.t0) / 2400), hov = S.px >= 0 && prog >= 1;
+      const Y = (v) => base - (v / cap) * (base - top);
       ctx.clearRect(0, 0, w, h);
       for (let c = 0; c < cols; c++) {
         const x = c * gap + gap / 2, hour = (c / (cols - 1)) * 23;
-        const yLo = base - (at(feat.lo, hour) / cap) * (base - top), yHi = base - (at(feat.hi, hour) / cap) * (base - top);
-        const shown = c / cols <= prog * 1.05, near = S.hover >= 0 ? Math.max(0, 1 - Math.abs(c - S.hover) / 2.5) : 0;
+        const yLo = Y(at(feat.lo, hour)), yHi = Y(at(feat.hi, hour)), shown = c / cols <= prog * 1.05;
         for (let r = 0; r < rows; r++) {
           const y = r * gap + gap / 2;
           let a = 0.07, rad = 0.9, col = '241,242,243';
@@ -266,42 +324,46 @@
             if (y >= yLo) { a = 0.5 + 0.3 * (1 - (y - yLo) / Math.max(1, base - yLo)) + 0.2 * tw; rad = 2.1; }
             else if (y >= yHi) { a = 0.4 + 0.3 * tw; rad = 1.8; col = '236,110,58'; }
           }
-          if (near) { a = Math.min(1, a + 0.35 * near); rad += 0.5 * near; }
+          if (hov) {
+            const dx = x - S.px, dy = y - S.py, d2 = dx * dx + dy * dy;
+            if (d2 < 10000) { const n = 1 - Math.sqrt(d2) / 100; a = Math.min(1, a + 0.6 * n * n); rad += 1.1 * n * n; }
+          }
           ctx.fillStyle = `rgba(${col},${a.toFixed(3)})`;
           ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.2832); ctx.fill();
         }
       }
-      ctx.font = '500 12px "Pretendard Variable", system-ui, sans-serif'; ctx.fillStyle = 'rgba(241,242,243,.62)'; ctx.textAlign = 'center';
-      if (w >= 700 && prog >= 1) {
-        for (let hh = 12; hh <= 21; hh += 3) ctx.fillText(`${hh}시`, (hh / 23) * (cols - 1) * gap + gap / 2, capRow * gap + gap / 2 + 22);
-        ctx.textAlign = 'right';
-        ctx.fillText(`전체 주차면 약 ${num(cap)}대`, w - 22, capRow * gap + gap / 2 - 10);
+      if (prog < 1) return;
+      ctx.font = '500 12px "Pretendard Variable", system-ui, sans-serif'; ctx.fillStyle = 'rgba(241,242,243,.62)';
+      if (w >= 700) {
         ctx.textAlign = 'center';
+        for (let hh = 12; hh <= 18; hh += 3) ctx.fillText(`${hh}시`, (hh / 23) * span + gap / 2, capRow * gap + gap / 2 + 22);
+        ctx.textAlign = 'right';
+        ctx.fillText(`전체 주차면 약 ${num(cap)}대`, w - 22, capRow * gap + gap / 2 + 22);
       }
-      if (S.hover >= 0 && prog >= 1) {
-        const hour = (S.hover / (cols - 1)) * 23, lo = Math.round(at(feat.lo, hour)), hi = Math.round(at(feat.hi, hour));
-        const label = `${hm(hour)} · ${hi > lo ? `${num(lo)}~${num(hi)}대` : `${num(lo)}대`}`;
-        const x = Math.min(w - 90, Math.max(90, S.hover * gap)), y = base - (hi / cap) * (base - top) - 16;
-        ctx.font = '600 13px "Pretendard Variable", system-ui, sans-serif';
-        const tw = ctx.measureText(label).width + 20;
-        ctx.fillStyle = 'rgba(241,242,243,.95)'; ctx.beginPath(); ctx.roundRect(x - tw / 2, y - 22, tw, 26, 13); ctx.fill();
-        ctx.fillStyle = '#0d0d0d'; ctx.fillText(label, x, y - 4);
+      if (hov) {
+        const hour = Math.max(0, Math.min(23, ((S.px - gap / 2) / span) * 23)), lo = Math.round(at(feat.lo, hour)), hi = Math.round(at(feat.hi, hour));
+        ctx.strokeStyle = 'rgba(241,242,243,.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(S.px, Y(hi) - 6); ctx.lineTo(S.px, base); ctx.stroke();
+        pill(`${hm(hour)} · ${hi > lo ? `${num(lo)}~${num(hi)}대` : `${num(lo)}대`}`, S.px, Y(hi) - 14);
+      } else if (w >= 700) {
+        pill(`${peakH}시 전후 가장 붐빔 · 최대 약 ${num(Math.round(feat.hi[peakH] / 10) * 10)}대`, (peakH / 23) * span + gap / 2, Y(feat.hi[peakH]) - 14);
       }
     }
     function loop(now) {
       if (!S.on) return;
-      if (now - S.last > 40) { S.last = now; draw(now); }
-      if (!REDUCE || now - S.t0 < 100) requestAnimationFrame(loop);
+      if (S.px >= 0 || now - S.last > 40) { S.last = now; draw(now); } // 커서가 올라와 있으면 매 프레임 그린다
+      if (!REDUCE) requestAnimationFrame(loop);
     }
     const start = () => { if (!S.on) { S.on = true; requestAnimationFrame(loop); } };
     size();
     requestAnimationFrame(loop);
     heroEl.addEventListener('pointermove', (e) => {
-      const r = cv.getBoundingClientRect(), gap = S.w < 640 ? 9 : 11;
-      S.hover = Math.round((e.clientX - r.left) / gap);
+      const r = cv.getBoundingClientRect();
+      S.px = e.clientX - r.left; S.py = e.clientY - r.top;
+      heroEl.style.setProperty('--px', (S.px / r.width - 0.5).toFixed(3));
+      heroEl.style.setProperty('--py', (S.py / r.height - 0.5).toFixed(3));
       if (REDUCE) draw(performance.now());
-    });
-    heroEl.addEventListener('pointerleave', () => { S.hover = -1; if (REDUCE) draw(performance.now()); });
+    }, { passive: true });
+    heroEl.addEventListener('pointerleave', () => { S.px = S.py = -1; if (REDUCE) draw(performance.now()); });
     window.addEventListener('resize', () => { size(); draw(performance.now()); });
     if ('IntersectionObserver' in window) new IntersectionObserver((en) => { if (en[0].isIntersecting) start(); else S.on = false; }).observe(heroEl);
     S.resize = () => { size(); draw(performance.now()); };
@@ -318,31 +380,33 @@
     D.forecast.forEach((f) => {
       const venues = [...new Set(f.shows.filter((s) => s.tier !== 'SMALL').map((s) => TIER_SHORT[s.tier]))];
       const cls = f.grade === '혼잡' ? 'c-crit' : f.grade === '보통' ? 'c-warn' : '';
-      h += `<button class="cal-cell ${cls}" data-date="${f.date}" aria-pressed="false" aria-label="${md(f.date)} ${f.dow}요일 ${f.grade} ${f.p}%">
-        <span class="d"><span>${+f.date.slice(8) === 1 || f === D.forecast[0] ? `${+f.date.slice(5, 7)}/` : ''}${+f.date.slice(8)}</span>${f.holiday ? '<span class="hol">휴일</span>' : ''}</span>
+      h += `<button class="cal-cell ${cls}" style="--i:${D.forecast.indexOf(f)}" data-date="${f.date}" aria-pressed="false" aria-label="${md(f.date)} ${f.dow}요일 ${f.grade} ${f.p}%">
+        <span class="d"><span>${+f.date.slice(8) === 1 || f === D.forecast[0] ? `${+f.date.slice(5, 7)}/` : ''}${+f.date.slice(8)}</span>${f.holiday ? '<span class="hol">휴일</span>' : f === D.forecast[0] ? '<span class="today">오늘</span>' : ''}</span>
         <span class="g">${gradeHtml(f.grade)}</span><span class="p">${f.p}%</span>
         <span class="ev">${esc(venues.join('·'))}</span></button>`;
     });
     $('#calendar').innerHTML = h;
     $('#calendar').addEventListener('click', (e) => { const b = e.target.closest('[data-date]'); if (b) pickDate(b.dataset.date); });
   }
-  function pickDate(d) {
+  function pickDate(d, quiet) {
     selDate = d;
     document.querySelectorAll('.cal-cell[data-date]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.date === d));
-    dayDetail();
+    dayDetail(true);
+    if (!quiet) setHash('forecast/' + d);
   }
-  function dayDetail() {
+  function dayDetail(first) {
     const f = fc(selDate), off = f.dow === '토' || f.dow === '일' || !!f.holiday;
     const sh = showsOf(f), dome = f.shows.filter((s) => s.tier === 'DOME');
     const hasBand = f.hi.some((v, i) => v !== f.lo[i]);
     const wx = f.tmax == null ? '' : ` · ${f.wxSrc === '예보' ? '예보' : '평년 기준'} 최고 ${f.tmax}℃${f.rain >= 1 ? `, 비 ${f.rain}mm` : ''}`;
-    let html = `<div class="card-head"><h2>${md(f.date)} (${f.dow}) ${gradeHtml(f.grade)} <span class="muted small">혼잡 기록 확률 ${f.p}%${wx}</span></h2></div>`;
+    let html = `<div class="card-head"><h2>${md(f.date)} (${f.dow}) ${gradeHtml(f.grade)} <span class="muted small">혼잡 기록 확률 ${f.p}%${wx}</span></h2><button class="btn sm" id="share">이 날 예보 링크 복사</button></div>`;
     html += `<h3>시간대별 예상 주차 대수</h3><div class="legend">${hasBand ? '<span><i class="sw line" style="background:var(--s2)"></i>주차형 공연일 때(상한)</span><span><i class="sw line" style="background:var(--s1)"></i>승하차형 공연일 때(하한)</span>' : '<span><i class="sw line" style="background:var(--s1)"></i>예상 주차 대수</span>'}</div><div id="c-day"></div>
-      <div class="arrive"><div class="q">도착 시각을 움직여 보세요</div><div class="big" id="arr-big"></div><span class="verdict" id="arr-verdict"></span>
-      <input type="range" id="arr" min="5" max="23" step="0.5" aria-label="도착 시각"><div class="ticks"><span>05시</span><span>08</span><span>11</span><span>14</span><span>17</span><span>20</span><span>23시</span></div></div>`;
+      <div class="arrive"><div class="rec" id="rec"></div><div class="q">도착 시각을 움직여 보세요</div><div class="big" id="arr-big"></div><span class="verdict" id="arr-verdict"></span>
+      <input type="range" id="arr" min="5" max="23" step="0.5" aria-label="도착 시각"><div class="ticks"><span>05시</span><span>08</span><span>11</span><span>14</span><span>17</span><span>20</span><span>23시</span></div></div>
+      <details class="tblview"><summary>표로 보기</summary><div class="table-wrap"><table class="tbl" id="t-hours"></table></div></details>`;
     html += '<p class="note">2024년 7월 실제 입출차 기록의 시간대별 주차 대수에 월별 주차 실적(2023~2025)의 계절 차이를 곱한 값입니다. KSPO DOME 공연일은 같은 달 공연일 7일에서 관측된 초과 주차 대수를 공연 시작 시각에 맞춰 더했으며, 관객 구성에 따라 차이가 커서 범위로 보여 드립니다.</p>';
     if (sh.length) {
-      html += '<h3 style="margin-top:14px">이날의 공연</h3><ul class="shows">' + sh.map((x) => `<li><span class="badge ${x.ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[x.ev.tier])}</span><b>${esc(x.ev.title)}</b><span class="muted">${x.ss.map((s) => `${hm(s.start)}~${hm(s.end)}${s.durKnown ? '' : '(종료 추정)'}`).join(', ')}</span>${x.ev.tier !== 'SMALL' && x.ev.end >= D.meta.today ? `<a href="#planner" data-plan="${x.ev.id}">플래너로 보기</a>` : ''}</li>`).join('') + '</ul>';
+      html += '<h3 style="margin-top:14px">이날의 공연</h3><ul class="shows">' + sh.map((x) => `<li>${poster(x.ev, 'tiny')}<span class="badge ${x.ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[x.ev.tier])}</span><b>${esc(x.ev.title)}</b><span class="muted">${x.ss.map((s) => `${hm(s.start)}~${hm(s.end)}${s.durKnown ? '' : '(종료 추정)'}`).join(', ')}</span>${x.ev.tier !== 'SMALL' && x.ev.end >= D.meta.today ? `<a href="#planner" data-plan="${x.ev.id}">플래너로 보기</a>` : ''}</li>`).join('') + '</ul>';
     }
     const g = [];
     if (dome.length) {
@@ -360,8 +424,8 @@
     const hrs = [...Array(24).keys()];
     const vl = [], seen = new Set();
     f.shows.filter((s) => s.tier !== 'SMALL').forEach((s) => { const k = Math.round(s.start); if (!seen.has(k)) { seen.add(k); vl.push({ x: s.start, label: `${TIER_SHORT[s.tier]} ${hm(s.start)}`, row: vl.length }); } });
-    const chart = (mk) => lines($('#c-day'), {
-      x: hrs, xfmt: (h) => `${h}시`, ymax: 3000, endLabels: false, marker: mk,
+    const chart = (mk, anim) => lines($('#c-day'), {
+      x: hrs, xfmt: (h) => `${h}시`, ymax: 3000, endLabels: false, marker: mk, animate: !!anim,
       series: hasBand ? [{ name: '주차형(상한)', values: f.hi, color: 'var(--s2)' }, { name: '승하차형(하한)', values: f.lo, color: 'var(--s1)' }] : [{ name: '예상 주차 대수', values: f.lo, color: 'var(--s1)' }],
       band: hasBand ? { lo: f.lo, hi: f.hi } : null, vlines: vl, hline: { y: D.meta.capacity, label: `전체 주차면 약 ${num(D.meta.capacity)}대` },
       tipfn: (i) => `${i}시\n예상 주차 대수: ${hasBand ? `${num(f.lo[i])}~${num(f.hi[i])}대` : num(f.lo[i]) + '대'}\n(전체의 ${Math.round((f.lo[i] / D.meta.capacity) * 100)}${hasBand ? '~' + Math.round((f.hi[i] / D.meta.capacity) * 100) : ''}%)`,
@@ -385,11 +449,26 @@
         }
       }
       $('#arr-verdict').textContent = v;
-      chart(h);
+      chart(h, anim);
     };
+    let anim = !!first;
     arr.addEventListener('input', upd);
     upd();
-    $('#day-detail').querySelectorAll('[data-plan]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('planner'); pickShow(+a.dataset.plan, selDate); window.scrollTo(0, 0); }));
+    anim = false;
+    // 덜 붐비는 도착 시간 추천(그날 최대의 70% 이하인 시각)
+    const pk = f.hi.indexOf(dayMax);
+    let before = null, after = null;
+    for (let h = pk; h >= 6; h--) if (f.hi[h] <= dayMax * 0.7) { before = h; break; }
+    for (let h = pk; h <= 22; h++) if (f.hi[h] <= dayMax * 0.7) { after = h; break; }
+    $('#rec').innerHTML = `<span class="chip hot">가장 붐비는 시간 ${pk}시 전후</span>${before != null ? `<button class="chip go" data-h="${before}">${before}시 이전 도착 추천</button>` : ''}${after != null ? `<button class="chip go" data-h="${after}">${after}시 이후는 한산</button>` : ''}`;
+    $('#rec').addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (b) { arr.value = b.dataset.h; upd(); } });
+    $('#t-hours').innerHTML = '<thead><tr><th>시각</th><th class="n">예상 주차 대수</th><th class="n">전체 주차면 대비</th></tr></thead><tbody>' + hrs.filter((h) => h >= 6).map((h) => `<tr><td>${h}시</td><td class="n">${f.hi[h] > f.lo[h] ? `${num(f.lo[h])}~${num(f.hi[h])}` : num(f.lo[h])}대</td><td class="n">${Math.round((f.lo[h] / cap) * 100)}${f.hi[h] > f.lo[h] ? `~${Math.round((f.hi[h] / cap) * 100)}` : ''}%</td></tr>`).join('') + '</tbody>';
+    $('#share').addEventListener('click', (e) => {
+      const url = location.href.split('#')[0] + '#forecast/' + f.date, done = () => { e.target.textContent = '복사했습니다'; setTimeout(() => { e.target.textContent = '이 날 예보 링크 복사'; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => window.prompt('이 주소를 복사하세요', url));
+      else window.prompt('이 주소를 복사하세요', url);
+    });
+    $('#day-detail').querySelectorAll('[data-plan]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('planner', true); pickShow(+a.dataset.plan, selDate); }));
   }
 
   /* ---------- 2. 공연 방문 플래너 ---------- */
@@ -401,9 +480,9 @@
   function showList() {
     const up = upcoming();
     const newCut = new Date(new Date(D.meta.today).getTime() - 21 * 864e5).toISOString().slice(0, 10);
-    $('#show-list').innerHTML = up.map(({ ev }) => `<button class="show" data-id="${ev.id}" aria-pressed="false">
+    $('#show-list').innerHTML = up.map(({ ev }) => `<button class="show" data-id="${ev.id}" aria-pressed="false">${poster(ev, 'thumb')}<span class="show-in">
       <span class="badge ${ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[ev.tier])}</span>${ev.reg >= newCut ? '<span class="new">새로 등록</span>' : ''}
-      <span class="t">${esc(ev.title)}</span><span class="m">${ev.begin === ev.end ? md(ev.begin) : `${md(ev.begin)} ~ ${md(ev.end)}`}</span></button>`).join('');
+      <span class="t">${esc(ev.title)}</span><span class="m">${ev.begin === ev.end ? md(ev.begin) : `${md(ev.begin)} ~ ${md(ev.end)}`}</span></span></button>`).join('');
     $('#show-list').addEventListener('click', (e) => { const b = e.target.closest('[data-id]'); if (b) pickShow(+b.dataset.id); });
     if (up.length) pickShow(up[0].ev.id);
   }
@@ -421,7 +500,7 @@
     const arrive = s.start - (dome ? F.arr[1] : 60) / 60, rushA = s.start - (dome ? F.arr[2] : 60) / 60, rushB = s.start - (dome ? F.arr[4] : 20) / 60;
     const leaveRush = s.end + 10 / 60, leaveCalm = s.end + 45 / 60;
     const fee = (a, b) => Math.ceil(((b - a) * 60) / 10) * D.meta.fee;
-    let h = `<div class="card-head"><h2>${esc(ev.title)}</h2><p class="muted">${esc(ev.venue)} · ${esc(ev.tm)}</p></div>
+    let h = `<div class="plan-grid"><div class="plan-side">${poster(ev, 'big')}</div><div class="plan-main"><div class="card-head"><h2>${esc(ev.title)}</h2><p class="muted">${esc(ev.venue)} · ${esc(ev.tm)}</p></div>
       <div class="controls">
         <label>관람일<select id="p-date">${days.map((d) => `<option value="${d.date}" ${d.date === f.date ? 'selected' : ''}>${md(d.date)} (${d.dow}) · ${d.grade}</option>`).join('')}</select></label>
         ${sessions.length > 1 ? `<label>회차<select id="p-sess">${sessions.map((x, i) => `<option value="${i}" ${x === s ? 'selected' : ''}>${hm(x.start)} 공연</option>`).join('')}</select></label>` : ''}
@@ -454,8 +533,9 @@
       <p class="note">절약액은 2024년 7월 KSPO DOME 공연일의 공연 주차 차량 요금 중앙값입니다.</p>`;
     }
     h += `<p><button class="btn primary" id="ics">내 캘린더에 일정·알림 추가(.ics)</button> ${ev.ticket ? `<a class="btn" href="${esc(ev.ticket)}" target="_blank" rel="noopener">예매 페이지</a>` : ''} <a class="btn" href="${esc(ev.page)}" target="_blank" rel="noopener">공연 상세(올림픽공원)</a></p>`;
-    h += `<h3 style="margin-top:16px">기다리는 동안, 올림픽공원에서</h3><div class="mini">${waitContent(f.date, ev)}</div>`;
+    h += `</div></div><h3 style="margin-top:22px">기다리는 동안, 올림픽공원에서</h3><div class="mini">${waitContent(f.date, ev)}</div>`;
     $('#plan').innerHTML = h;
+    if (!$('#tab-planner').hidden) setHash(`planner/${ev.id}/${f.date}`);
     $('#p-date').addEventListener('change', (e) => { selShow.date = e.target.value; selShow.idx = 0; plan(); });
     if ($('#p-sess')) $('#p-sess').addEventListener('change', (e) => { selShow.idx = +e.target.value; plan(); });
     $('#plan').querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; plan(); }));
@@ -580,6 +660,7 @@
       '혼잡 등급 안에서 더 세밀한 구분(혼잡과 매우 혼잡)은 현재 데이터로는 신뢰할 만큼 가려지지 않아 3등급만 제공합니다.',
       '주차형·승하차형 구분은 공연일 7일 표본의 관측입니다. 예보에서는 두 경우를 범위로 함께 보여 줍니다.',
       '구역(P1A~P11)의 위치는 데이터에 없어 지도로 표시하지 않았습니다. 위치는 올림픽공원 안내도를 참고하세요.',
+      '공연 포스터는 올림픽공원 공연정보의 이미지를 원본 서버에서 불러와 표시합니다. 저작권은 각 공연 주최사에 있습니다.',
     ].map((t) => `<li>${t}</li>`).join('');
     const q = [
       ['주차장 혼잡도 정보', `등록시간의 분·초 자리가 등록일의 월·일과 ${C.timeFormatBugShare}% 일치(예: 8월 12일 → 17:08:12)`, '시각 포맷 오류로 보이며 "시" 단위만 쓸 수 있음. 분 단위 복원 시 구역별 만차 순서·해소 시간 분석 정밀도 향상'],
@@ -599,6 +680,6 @@
     EV = new Map(D.events.map((e) => [e.id, e]));
     facts();
     $('#loading').remove();
-    hero(); calendar(); selDate = D.forecast[0].date; showList(); dataTab(); tabs(); pickDate(selDate); observe();
+    hero(); calendar(); showList(); dataTab(); pickDate(D.forecast[0].date, true); tabs(); observe(); spotlight();
   }).catch((e) => { $('#loading').textContent = '데이터를 불러오지 못했습니다: ' + e.message; });
 })();

@@ -6,6 +6,11 @@
 <meta name="theme-color" content="#0d0d0d">
 <title>올팍예보 — 날씨처럼 미리 보는 올림픽공원 혼잡 예보</title>
 <meta name="description" content="한국체육산업개발(주) 공공데이터로 만든 올림픽공원 혼잡 예보·공연 방문 플래너">
+<meta property="og:title" content="올팍예보 — 올림픽공원, 언제 가면 덜 붐빌까">
+<meta property="og:description" content="6주 혼잡 예보와 공연 날 도착·출차 시간표. 한국체육산업개발 공공데이터로 만들었습니다.">
+<meta property="og:image" content="https://plin4519.github.io/olpark-forecast/og.png">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230d0d0d'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23f1f2f3' stroke-opacity='.35' stroke-width='2'/%3E%3Cpath d='M16 7a9 9 0 0 1 8.5 6' fill='none' stroke='%23f1f2f3' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23ec6e3a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="style.css">
@@ -34,6 +39,7 @@
       <div class="hero-in wrap">
         <p class="eyebrow" data-reveal>한국체육산업개발 공공데이터로 만든 올림픽공원 혼잡 예보</p>
         <h1 class="headline" id="headline" aria-label="올림픽공원, 언제 가면 덜 붐빌까."></h1>
+        <p class="answer" id="answer" aria-hidden="true"></p>
         <p class="lead" data-reveal style="--d:.35s">앞으로 6주, 날짜마다 붐빌 확률을 날씨처럼 미리 알려 드립니다.<br>공연 날에는 도착·출차 시간표까지.</p>
         <div class="hero-cta" data-reveal style="--d:.45s">
           <button class="btn light" data-scroll="#step1">이번 주 예보 보기 <span aria-hidden="true">↓</span></button>
@@ -42,10 +48,21 @@
         <div class="hero-cards" id="hero-cards"></div>
         <p class="hero-note" id="hero-note"></p>
       </div>
+      <div class="hero-posters" id="hero-posters"></div>
       <div class="wordmark" aria-hidden="true">올팍예보</div>
     </div>
 
+    <div class="wrap rail-head">
+      <div class="step" data-reveal><span>NOW</span>지금 예정된 공연</div>
+      <p class="muted small" data-reveal>포스터를 누르면 그 공연의 도착·출차 시간표가 열립니다.</p>
+    </div>
     <div class="marquee" id="marquee" aria-label="다가오는 공연"></div>
+
+    <div class="wrap section" id="how">
+      <div class="step" data-reveal><span>HOW</span>세 번이면 끝</div>
+      <h2 class="title" data-reveal>고르고, 움직이고, 받는다.</h2>
+      <div class="how" id="how-grid"></div>
+    </div>
 
     <section class="band">
       <div class="wrap">
@@ -59,7 +76,7 @@
       <h2 class="title" data-reveal>6주 혼잡 예보</h2>
       <p class="sub" data-reveal id="cal-sub"></p>
       <div class="legend" id="grade-legend"></div>
-      <div id="calendar" class="calendar"></div>
+      <div id="calendar" class="calendar" data-reveal="stagger"></div>
     </div>
 
     <div class="wrap section" id="step2">
@@ -139,6 +156,7 @@
   <div class="wrap">
     <div class="foot-mark">올팍예보</div>
     <p>2026년도 한국체육산업개발(주) 공공데이터 활용 경진대회 출품용 프로토타입입니다. 예보는 과거 기록에 근거한 통계적 추정이며 실제 상황과 다를 수 있습니다.</p>
+    <p class="muted">공연 포스터는 올림픽공원 공연정보의 이미지를 원본 서버에서 불러와 표시하며, 저작권은 각 공연 주최사에 있습니다.</p>
     <p id="foot-meta" class="muted"></p>
   </div>
 </footer>
