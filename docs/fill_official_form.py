@@ -85,7 +85,43 @@ def set_cell(tc, elems):
         tc.append(mk_p("", size=4, after=0, line=120))
 
 
-def main(form_path, frag_path, out_path):
+def fill_applicant(t_app, t_consent, a):
+    """신청인 인적사항·날짜·동의 표시를 채운다(서명 칸은 비워 둔다). a: 저장소에 올리지 않는 별도 JSON."""
+    rows = t_app.findall(W + "tr")
+
+    def put(tc, text, size=22):
+        set_cell(tc, [mk_p(text, size=size, align="center", after=0, line=300)])
+
+    for t in rows[0].iter(W + "t"):
+        if t.text and "개인" in t.text and "팀" in t.text:
+            t.text = "☑ 개인   ☐ 팀" if a["type"] == "개인" else "☐ 개인   ☑ 팀"
+    c1, c2 = rows[1].findall(W + "tc"), rows[2].findall(W + "tc")
+    put(c1[1], a["name"]); put(c1[3], a["birth"])
+    put(c2[1], a["phone"]); put(c2[3], a["email"])
+    put(rows[3].findall(W + "tc")[1], a["address"], 20)
+    put(rows[4].findall(W + "tc")[1], a["org"])
+    y, m, d = a["date"].split("-")
+    for p in rows[-1].iter(W + "p"):  # 서약서
+        ts = list(p.iter(W + "t"))
+        s = "".join(t.text or "" for t in ts)
+        if re.sub(r"\s", "", s) == "2026년월일":
+            ts[-1].text = f"{y}년 {int(m)}월 {int(d)}일"
+        elif "신청인" in s and "(인)" in s:
+            ts[-1].text = re.sub(r"신청인\s+\(인\)", f"신청인    {a['name']}    (인)", ts[-1].text)
+    crow = t_consent.findall(W + "tr")
+    for p in crow[0].iter(W + "p"):  # 동의서 날짜
+        ts = list(p.iter(W + "t"))
+        if re.sub(r"\s", "", "".join(t.text or "" for t in ts)) == "2026년월일":
+            ts[-1].text = f"{y} 년 {int(m)} 월 {int(d)} 일"
+    cells = crow[2].findall(W + "tc")
+    if a.get("consent"):
+        for t in cells[0].iter(W + "t"):
+            if t.text:
+                t.text = t.text.replace("□ 동의", "☑ 동의", 1)
+    put(cells[1], a["name"])
+
+
+def main(form_path, frag_path, out_path, applicant_path=None):
     zin = zipfile.ZipFile(form_path)
     files = {i.filename: zin.read(i.filename) for i in zin.infolist() if not i.filename.endswith("/")}
     order = [i.filename for i in zin.infolist() if not i.filename.endswith("/")]
@@ -178,6 +214,12 @@ def main(form_path, frag_path, out_path):
         elif label.startswith("활용사례기획개요"):
             set_cell(target, [mk_p(x, size=19, after=40, line=280, left=60) for x in OVERVIEW])
 
+    if applicant_path:
+        import json
+        import pathlib
+        t_consent = find(lambda s, t: s.startswith("1. 개인정보"))
+        fill_applicant(t_app, t_consent, json.loads(pathlib.Path(applicant_path).read_text(encoding="utf-8")))
+
     # 서약서(표의 마지막 두 줄)는 쪽 사이에서 쪼개지지 않게 한 덩어리로 넘긴다
     for kn in rows[-2].iter(W + "keepNext"):
         kn.set(W + "val", "true")
@@ -242,4 +284,4 @@ def main(form_path, frag_path, out_path):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:5])
