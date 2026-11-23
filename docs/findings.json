@@ -492,7 +492,8 @@
   "peakAll": {
    "value": 2213,
    "time": "2024-07-21 16:50",
-   "capShare": 79
+   "capShare": 79,
+   "capShareGeneral": 81
   },
   "basePeak": {
    "weekday": 954,

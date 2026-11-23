@@ -22,6 +22,10 @@ RAW, EXT = ROOT / "data" / "raw", ROOT / "data" / "ext"
 TODAY = pd.Timestamp(sys.argv[1]) if len(sys.argv) > 1 else pd.Timestamp(dt.date.today())
 GRADES = ((0, 0.15, "여유"), (0.15, 0.45, "보통"), (0.45, 1.01, "혼잡"))
 CAPACITY = 2800  # FAQ 데이터(15089962): "2800여대의 차량이 주차할 수 있는..."
+# 장애인 전용 주차구획은 일반 차량이 쓸 수 없으므로 여유를 따질 때 뺀다.
+# 실제 면수는 공개 데이터에 없어, 법정 설치 비율(주차대수의 2~4%, 조례로 정함)의 중간값 3%로 추정한다.
+ACCESSIBLE_RATIO = 0.03
+CAPACITY_GENERAL = round(CAPACITY * (1 - ACCESSIBLE_RATIO))
 FEE_PER_10MIN = 600  # FAQ 데이터: 일반 승용차 10분당 600원
 DOW_KO = "월화수목금토일"
 
@@ -302,7 +306,7 @@ def analyze_parking(evd: pd.DataFrame) -> tuple[dict, dict]:
         hourlyIn=dict(weekday=[r(hourly_in.get(False, pd.Series(dtype=float)).get(h, 0) / n_wd) for h in range(24)],
                       weekend=[r(hourly_in.get(True, pd.Series(dtype=float)).get(h, 0) / n_we) for h in range(24)]),
         dawn=dict(perDay=r(len(dawn) / n_wd), medianDwell=r(dawn["dw"].median()), shortShare=r((dawn["dw"] <= 10).mean() * 100, 1)),
-        peakAll=dict(value=int(occ.max()), time=occ.idxmax().strftime("%Y-%m-%d %H:%M"), capShare=r(occ.max() / CAPACITY * 100)),
+        peakAll=dict(value=int(occ.max()), time=occ.idxmax().strftime("%Y-%m-%d %H:%M"), capShare=r(occ.max() / CAPACITY * 100), capShareGeneral=r(occ.max() / CAPACITY_GENERAL * 100)),
         basePeak=dict(weekday=max(prof["weekday"]), weekend=max(prof["weekend"])),
         capacity=CAPACITY, fee=FEE_PER_10MIN,
     )
@@ -589,7 +593,8 @@ def main() -> None:
         for _, e in ev.iterrows() if e["id"] in used or e["id"] in recent
     ]
     app = dict(
-        meta=dict(generated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), today=TODAY.strftime("%Y-%m-%d"), capacity=CAPACITY, fee=FEE_PER_10MIN,
+        meta=dict(generated=dt.datetime.now().strftime("%Y-%m-%d %H:%M"), today=TODAY.strftime("%Y-%m-%d"), capacity=CAPACITY, capacityGeneral=CAPACITY_GENERAL,
+                  accessible=dict(ratio=r(ACCESSIBLE_RATIO * 100), low=2, high=4, spaces=CAPACITY - CAPACITY_GENERAL), fee=FEE_PER_10MIN,
                   tierLabel=TIER_LABEL, seasonIndex={str(k): r(v, 2) for k, v in season.items()}, holidays=HOLIDAYS),
         parking=park, congestion=cong, model=model, forecast=forecast, events=ev_out, monthly=monthly, content=build_content(),
     )

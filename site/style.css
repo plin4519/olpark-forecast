@@ -414,3 +414,4 @@ svg .grow { transform-box: fill-box; transform-origin: 50% 100%; transform: scal
 .ph.big img { filter: grayscale(1) contrast(1.15) brightness(.95); }
 .grade { white-space: nowrap; }
 .pinfo .pg { flex-wrap: wrap; gap: 2px 8px; }
+@media (min-width: 900px) { .hero-cards { max-width: 560px; } .hero-note { max-width: 26em; } }

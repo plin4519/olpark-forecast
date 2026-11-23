@@ -125,6 +125,8 @@
     F.first = D.congestion.domino.slice(0, 2).map((d) => d.zone);
     F.last = D.congestion.domino.slice(-2).map((d) => d.zone);
     F.m = D.model.facts;
+    F.cap = D.meta.capacityGeneral; // 일반 차량이 쓸 수 있는 주차면(장애인 전용 구역 제외)
+    F.capTxt = num(Math.round(F.cap / 100) * 100);
   }
 
   /* ---------- 탭 ---------- */
@@ -245,8 +247,9 @@
       const f = fc(first);
       return `<button class="hp" data-reveal style="--r:${[5, -4, 3][i]}deg;--z:${[22, 13, 6][i]};--d:${(0.7 + i * 0.12).toFixed(2)}s" data-planid="${ev.id}" data-plandate="${first}" aria-label="${esc(ev.title)} 시간표 보기">${poster(ev)}<span class="hp-chip"><span class="grade ${GRADE[f.grade].cls}"><i aria-hidden="true">${GRADE[f.grade].icon}</i></span>${+first.slice(5, 7)}/${+first.slice(8)} ${f.dow} · ${f.p}%</span></button>`;
     }).join('');
-    $('#hero-note').textContent = `배경의 점은 ${md(feat.date)}(${feat.dow})의 시간대별 예상 주차 대수입니다. 흰 점은 하한, 주황 점은 주차형 공연일 때의 상한까지.`;
-    dots(feat);
+    const todayBand = f0.hi.some((v, i) => v !== f0.lo[i]);
+    $('#hero-note').textContent = `배경의 점은 오늘(${md(f0.date)} ${f0.dow}요일)의 시간대별 예상 주차 대수입니다. 위쪽 눈금선이 일반 주차면 약 ${F.capTxt}대${todayBand ? ', 주황 점은 주차형 공연일 때의 상한' : ''}입니다.`;
+    dots(f0);
 
     // 포스터 레일(공식 공연정보의 포스터를 원본 서버에서 불러온다)
     const pitem = ({ ev, first }) => {
@@ -279,7 +282,7 @@
     const st = [
       ['분석한 실제 입출차 기록', P.rows, '건', '2024년 7월 한 달 치를 5분 단위 주차 대수로 복원했습니다'],
       ['주말·휴일에 혼잡 기록이 생긴 비율', M.facts.offRate, '%', `평일은 ${M.facts.workRate}%. 혼잡의 주원인은 주말 낮 나들이였습니다`],
-      ['공연 날 관측된 최대 주차 대수', P.peakAll.value, '대', `전체 주차면 약 ${num(D.meta.capacity)}대의 ${P.peakAll.capShare}%, 평소의 ${F.pkPeak}배`],
+      ['공연 날 관측된 최대 주차 대수', P.peakAll.value, '대', `일반 주차면 약 ${F.capTxt}대의 ${P.peakAll.capShareGeneral}%, 평소의 ${F.pkPeak}배`],
       ['종료 후 30분 안에 나가는 공연 주차 차량', F.exitShareAll, '%', '45분만 늦추면 가장 붐비는 구간을 피합니다'],
     ];
     $('#stats').innerHTML = st.map((x, i) => `<div class="stat" data-reveal style="--d:${(i * 0.08).toFixed(2)}s"><div class="lab">${x[0]}</div><div class="num"><span data-count="${x[1]}">0</span><small>${x[2]}</small></div><div class="desc">${esc(x[3])}</div></div>`).join('');
@@ -306,25 +309,29 @@
       ctx.fillStyle = '#0d0d0d'; ctx.textAlign = 'center'; ctx.fillText(label, x, y - 5);
     }
     function draw(now) {
-      const { w, h, gap } = S, cols = Math.floor(w / gap), rows = Math.floor(h / gap), span = (cols - 1) * gap;
-      // 차트 꼭대기 = 전체 주차면(가득 차면 위쪽 눈금선에 닿는다)
-      const base = h - S.wm * 0.42, top = Math.max(150, h * (w >= 1100 ? 0.3 : 0.2)), cap = D.meta.capacity, capRow = Math.round((top - gap / 2) / gap);
-      const prog = REDUCE ? 1 : Math.min(1, (now - S.t0) / 2400), hov = S.px >= 0 && prog >= 1;
+      const { w, h, gap } = S, cols = Math.floor(w / gap), rows = Math.floor(h / gap);
+      // 넓은 화면에서는 글과 카드가 없는 오른쪽 영역에 05~23시를 그린다. 좁은 화면에서는 전체 폭에 0~23시.
+      const wide = w >= 900, x0 = wide ? w * 0.47 : gap / 2, x1 = wide ? w - 22 : (cols - 1) * gap + gap / 2, H0 = wide ? 5 : 0;
+      const X = (hr) => x0 + ((hr - H0) / (23 - H0)) * (x1 - x0), HR = (x) => H0 + ((x - x0) / (x1 - x0)) * (23 - H0);
+      // 차트 꼭대기 = 일반 주차면(가득 차면 위쪽 눈금선에 닿는다). 바닥은 첫 화면 안에 들어오게 한다.
+      const base = Math.min(h - S.wm * 0.42, window.innerHeight - 26), top = Math.max(150, Math.min(h, window.innerHeight) * (w >= 1100 ? 0.37 : 0.24)), cap = F.cap, capRow = Math.round((top - gap / 2) / gap);
+      const prog = REDUCE ? 1 : Math.min(1, (now - S.t0) / 2400), hov = S.px >= x0 && S.px <= x1 && prog >= 1;
       const Y = (v) => base - (v / cap) * (base - top);
       ctx.clearRect(0, 0, w, h);
       for (let c = 0; c < cols; c++) {
-        const x = c * gap + gap / 2, hour = (c / (cols - 1)) * 23;
-        const yLo = Y(at(feat.lo, hour)), yHi = Y(at(feat.hi, hour)), shown = c / cols <= prog * 1.05;
+        const x = c * gap + gap / 2, inChart = x >= x0 - gap / 2 && x <= x1 + gap / 2, hour = HR(x);
+        const yLo = inChart ? Y(at(feat.lo, hour)) : 1e9, yHi = inChart ? Y(at(feat.hi, hour)) : 1e9;
+        const shown = inChart && (x - x0) / (x1 - x0) <= prog * 1.05;
         for (let r = 0; r < rows; r++) {
           const y = r * gap + gap / 2;
           let a = 0.07, rad = 0.9, col = '241,242,243';
-          if (shown && r === capRow && c / cols > 0.5) { a = 0.42; rad = 1.1; }
-          if (shown && y <= base + gap) {
+          if (shown && r === capRow) { a = 0.42; rad = 1.1; }
+          if (shown && y <= base + gap / 2) {
             const tw = REDUCE ? 0.5 : 0.5 + 0.5 * Math.sin(now / 900 + c * 0.33 + r * 0.61);
             if (y >= yLo) { a = 0.5 + 0.3 * (1 - (y - yLo) / Math.max(1, base - yLo)) + 0.2 * tw; rad = 2.1; }
             else if (y >= yHi) { a = 0.4 + 0.3 * tw; rad = 1.8; col = '236,110,58'; }
           }
-          if (hov) {
+          if (S.px >= 0 && prog >= 1) {
             const dx = x - S.px, dy = y - S.py, d2 = dx * dx + dy * dy;
             if (d2 < 10000) { const n = 1 - Math.sqrt(d2) / 100; a = Math.min(1, a + 0.6 * n * n); rad += 1.1 * n * n; }
           }
@@ -333,19 +340,27 @@
         }
       }
       if (prog < 1) return;
+      const capY = capRow * gap + gap / 2;
       ctx.font = '500 12px "Pretendard Variable", system-ui, sans-serif'; ctx.fillStyle = 'rgba(241,242,243,.62)';
       if (w >= 700) {
         ctx.textAlign = 'center';
-        for (let hh = 12; hh <= 18; hh += 3) ctx.fillText(`${hh}시`, (hh / 23) * span + gap / 2, capRow * gap + gap / 2 + 22);
+        for (let hh = wide ? 9 : 12; hh <= 21; hh += 3) ctx.fillText(`${hh}시`, X(hh), capY + 22);
         ctx.textAlign = 'right';
-        ctx.fillText(`전체 주차면 약 ${num(cap)}대`, w - 22, capRow * gap + gap / 2 + 22);
+        ctx.fillText(`일반 주차면 약 ${F.capTxt}대`, x1, capY - 10);
       }
       if (hov) {
-        const hour = Math.max(0, Math.min(23, ((S.px - gap / 2) / span) * 23)), lo = Math.round(at(feat.lo, hour)), hi = Math.round(at(feat.hi, hour));
+        const hour = Math.max(H0, Math.min(23, HR(S.px))), lo = Math.round(at(feat.lo, hour)), hi = Math.round(at(feat.hi, hour));
         ctx.strokeStyle = 'rgba(241,242,243,.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(S.px, Y(hi) - 6); ctx.lineTo(S.px, base); ctx.stroke();
         pill(`${hm(hour)} · ${hi > lo ? `${num(lo)}~${num(hi)}대` : `${num(lo)}대`}`, S.px, Y(hi) - 14);
       } else if (w >= 700) {
-        pill(`${peakH}시 전후 가장 붐빔 · 최대 약 ${num(Math.round(feat.hi[peakH] / 10) * 10)}대`, (peakH / 23) * span + gap / 2, Y(feat.hi[peakH]) - 14);
+        // 오늘 데이터이므로 '지금' 위치를 표시한다
+        const nd = new Date(), nowH = nd.getHours() + nd.getMinutes() / 60;
+        if (nowH >= H0 && nowH <= 23) {
+          const nx = X(nowH), nv = at(feat.hi, nowH);
+          ctx.strokeStyle = 'rgba(241,242,243,.6)'; ctx.lineWidth = 1; ctx.setLineDash([3, 4]); ctx.beginPath(); ctx.moveTo(nx, Y(nv) - 4); ctx.lineTo(nx, base); ctx.stroke(); ctx.setLineDash([]);
+          if (Math.abs(nowH - peakH) > 3) pill(`지금 ${hm(nowH)} · 약 ${num(Math.round(nv / 10) * 10)}대`, nx, Y(nv) - 12);
+        }
+        pill(`오늘 ${peakH}시 전후 가장 붐빔 · 최대 약 ${num(Math.round(feat.hi[peakH] / 10) * 10)}대`, X(peakH), Y(feat.hi[peakH]) - 14);
       }
     }
     function loop(now) {
@@ -404,7 +419,7 @@
       <div class="arrive"><div class="rec" id="rec"></div><div class="q">도착 시각을 움직여 보세요</div><div class="big" id="arr-big"></div><span class="verdict" id="arr-verdict"></span>
       <input type="range" id="arr" min="5" max="23" step="0.5" aria-label="도착 시각"><div class="ticks"><span>05시</span><span>08</span><span>11</span><span>14</span><span>17</span><span>20</span><span>23시</span></div></div>
       <details class="tblview"><summary>표로 보기</summary><div class="table-wrap"><table class="tbl" id="t-hours"></table></div></details>`;
-    html += '<p class="note">2024년 7월 실제 입출차 기록의 시간대별 주차 대수에 월별 주차 실적(2023~2025)의 계절 차이를 곱한 값입니다. KSPO DOME 공연일은 같은 달 공연일 7일에서 관측된 초과 주차 대수를 공연 시작 시각에 맞춰 더했으며, 관객 구성에 따라 차이가 커서 범위로 보여 드립니다.</p>';
+    html += '<p class="note">2024년 7월 실제 입출차 기록의 시간대별 주차 대수에 월별 주차 실적(2023~2025)의 계절 차이를 곱한 값입니다. KSPO DOME 공연일은 같은 달 공연일 7일에서 관측된 초과 주차 대수를 공연 시작 시각에 맞춰 더했으며, 관객 구성에 따라 차이가 커서 범위로 보여 드립니다. 기준선은 전체 약 ' + num(D.meta.capacity) + '대에서 일반 차량이 쓸 수 없는 장애인 전용 구역(법정 설치 비율 ' + D.meta.accessible.low + '~' + D.meta.accessible.high + '%, ' + D.meta.accessible.ratio + '%로 추정)을 뺀 일반 주차면입니다.</p>';
     if (sh.length) {
       html += '<h3 style="margin-top:14px">이날의 공연</h3><ul class="shows">' + sh.map((x) => `<li>${poster(x.ev, 'tiny')}<span class="badge ${x.ev.tier === 'DOME' ? 'dome' : ''}">${esc(TIER_SHORT[x.ev.tier])}</span><b>${esc(x.ev.title)}</b><span class="muted">${x.ss.map((s) => `${hm(s.start)}~${hm(s.end)}${s.durKnown ? '' : '(종료 추정)'}`).join(', ')}</span>${x.ev.tier !== 'SMALL' && x.ev.end >= D.meta.today ? `<a href="#planner" data-plan="${x.ev.id}">플래너로 보기</a>` : ''}</li>`).join('') + '</ul>';
     }
@@ -427,17 +442,17 @@
     const chart = (mk, anim) => lines($('#c-day'), {
       x: hrs, xfmt: (h) => `${h}시`, ymax: 3000, endLabels: false, marker: mk, animate: !!anim,
       series: hasBand ? [{ name: '주차형(상한)', values: f.hi, color: 'var(--s2)' }, { name: '승하차형(하한)', values: f.lo, color: 'var(--s1)' }] : [{ name: '예상 주차 대수', values: f.lo, color: 'var(--s1)' }],
-      band: hasBand ? { lo: f.lo, hi: f.hi } : null, vlines: vl, hline: { y: D.meta.capacity, label: `전체 주차면 약 ${num(D.meta.capacity)}대` },
-      tipfn: (i) => `${i}시\n예상 주차 대수: ${hasBand ? `${num(f.lo[i])}~${num(f.hi[i])}대` : num(f.lo[i]) + '대'}\n(전체의 ${Math.round((f.lo[i] / D.meta.capacity) * 100)}${hasBand ? '~' + Math.round((f.hi[i] / D.meta.capacity) * 100) : ''}%)`,
+      band: hasBand ? { lo: f.lo, hi: f.hi } : null, vlines: vl, hline: { y: F.cap, label: `일반 주차면 약 ${F.capTxt}대` },
+      tipfn: (i) => `${i}시\n예상 주차 대수: ${hasBand ? `${num(f.lo[i])}~${num(f.hi[i])}대` : num(f.lo[i]) + '대'}\n(일반 주차면의 ${Math.round((f.lo[i] / F.cap) * 100)}${hasBand ? '~' + Math.round((f.hi[i] / F.cap) * 100) : ''}%)`,
     });
-    const ds = dome.length ? dome[dome.length - 1] : null, cap = D.meta.capacity, dayMax = Math.max(...f.hi);
+    const ds = dome.length ? dome[dome.length - 1] : null, cap = F.cap, dayMax = Math.max(...f.hi);
     const arr = $('#arr');
     const init = ds ? ds.start - F.arr[1] / 60 : f.date === D.meta.today ? new Date().getHours() : 11;
     arr.value = Math.min(23, Math.max(5, Math.round(init * 2) / 2));
     const upd = () => {
       const h = +arr.value, iv = (v) => { const a = Math.floor(h), b = Math.min(23, a + 1); return Math.round(v[a] + (v[b] - v[a]) * (h - a)); };
       const lo = iv(f.lo), hi = iv(f.hi), pl = Math.round((lo / cap) * 100), ph = Math.round((hi / cap) * 100);
-      $('#arr-big').innerHTML = `${hm(h)} 도착<small>예상 주차 ${hi > lo ? `${num(lo)}~${num(hi)}대 · 전체의 ${pl}~${ph}%` : `${num(lo)}대 · 전체의 ${pl}%`}</small>`;
+      $('#arr-big').innerHTML = `${hm(h)} 도착<small>예상 주차 ${hi > lo ? `${num(lo)}~${num(hi)}대 · 일반 주차면의 ${pl}~${ph}%` : `${num(lo)}대 · 일반 주차면의 ${pl}%`}</small>`;
       let v = hi >= dayMax * 0.9 ? '이날 가장 붐비는 시간대' : hi <= dayMax * 0.5 ? '여유 있는 시간대' : '보통 수준';
       if (ds) {
         const m = (ds.start - h) * 60, pts = [[360, 0], [F.arr[0], 10], [F.arr[1], 25], [F.arr[2], 50], [F.arr[3], 75], [F.arr[4], 90], [0, 100]];
@@ -462,7 +477,7 @@
     for (let h = pk; h <= 22; h++) if (f.hi[h] <= dayMax * 0.7) { after = h; break; }
     $('#rec').innerHTML = `<span class="chip hot">가장 붐비는 시간 ${pk}시 전후</span>${before != null ? `<button class="chip go" data-h="${before}">${before}시 이전 도착 추천</button>` : ''}${after != null ? `<button class="chip go" data-h="${after}">${after}시 이후는 한산</button>` : ''}`;
     $('#rec').addEventListener('click', (e) => { const b = e.target.closest('[data-h]'); if (b) { arr.value = b.dataset.h; upd(); } });
-    $('#t-hours').innerHTML = '<thead><tr><th>시각</th><th class="n">예상 주차 대수</th><th class="n">전체 주차면 대비</th></tr></thead><tbody>' + hrs.filter((h) => h >= 6).map((h) => `<tr><td>${h}시</td><td class="n">${f.hi[h] > f.lo[h] ? `${num(f.lo[h])}~${num(f.hi[h])}` : num(f.lo[h])}대</td><td class="n">${Math.round((f.lo[h] / cap) * 100)}${f.hi[h] > f.lo[h] ? `~${Math.round((f.hi[h] / cap) * 100)}` : ''}%</td></tr>`).join('') + '</tbody>';
+    $('#t-hours').innerHTML = '<thead><tr><th>시각</th><th class="n">예상 주차 대수</th><th class="n">일반 주차면 대비</th></tr></thead><tbody>' + hrs.filter((h) => h >= 6).map((h) => `<tr><td>${h}시</td><td class="n">${f.hi[h] > f.lo[h] ? `${num(f.lo[h])}~${num(f.hi[h])}` : num(f.lo[h])}대</td><td class="n">${Math.round((f.lo[h] / cap) * 100)}${f.hi[h] > f.lo[h] ? `~${Math.round((f.hi[h] / cap) * 100)}` : ''}%</td></tr>`).join('') + '</tbody>';
     $('#share').addEventListener('click', (e) => {
       const url = location.href.split('#')[0] + '#forecast/' + f.date, done = () => { e.target.textContent = '복사했습니다'; setTimeout(() => { e.target.textContent = '이 날 예보 링크 복사'; }, 1600); };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => window.prompt('이 주소를 복사하세요', url));
@@ -578,7 +593,7 @@
     $('#tiles').innerHTML = [
       ['분석한 입출차 기록', num(P.rows) + '건', '2024년 7월 한 달'],
       ['10분 이하 회차·승하차', P.segments[0].share + '%', `${num(P.segments[0].n)}건`],
-      ['관측된 최대 주차 대수', num(P.peakAll.value) + '대', `${P.peakAll.time} · 전체 주차면의 약 ${P.peakAll.capShare}%`],
+      ['관측된 최대 주차 대수', num(P.peakAll.value) + '대', `${P.peakAll.time} · 일반 주차면의 약 ${P.peakAll.capShareGeneral}%`],
       ['주말·휴일 혼잡 기록 발생률', M.facts.offRate + '%', `평일은 ${M.facts.workRate}%`],
     ].map((t) => `<div class="tile"><div class="k">${t[0]}</div><div class="v">${t[1]}</div><div class="s">${t[2]}</div></div>`).join('');
 
@@ -660,6 +675,7 @@
       '혼잡 등급 안에서 더 세밀한 구분(혼잡과 매우 혼잡)은 현재 데이터로는 신뢰할 만큼 가려지지 않아 3등급만 제공합니다.',
       '주차형·승하차형 구분은 공연일 7일 표본의 관측입니다. 예보에서는 두 경우를 범위로 함께 보여 줍니다.',
       '구역(P1A~P11)의 위치는 데이터에 없어 지도로 표시하지 않았습니다. 위치는 올림픽공원 안내도를 참고하세요.',
+      `여유를 따지는 기준은 전체 약 ${num(D.meta.capacity)}대가 아니라 장애인 전용 구역을 뺀 일반 주차면 약 ${F.capTxt}대입니다. 전용 구역의 실제 면수는 공개 데이터에 없어 법정 설치 비율(${D.meta.accessible.low}~${D.meta.accessible.high}%)의 중간값 ${D.meta.accessible.ratio}%로 추정했고, 입출차 기록에는 전용 구역을 이용한 차량도 섞여 있습니다.`,
       '공연 포스터는 올림픽공원 공연정보의 이미지를 원본 서버에서 불러와 표시합니다. 저작권은 각 공연 주최사에 있습니다.',
     ].map((t) => `<li>${t}</li>`).join('');
     const q = [
@@ -667,7 +683,7 @@
       ['영문 공연정보', '공연일자 값이 실제 공연일이 아니라 등록 시점에 가까움(같은 날짜에 10건 이상 몰림)', '공연 시작·종료일을 별도 항목으로 제공'],
       ['올림픽공원 공연정보', '공연 시간(tm)이 자유 서술형, 공연장 표기가 50가지 이상으로 제각각', '회차별 시작 시각을 구조화하고 공연장 코드를 표준화'],
       ['올림픽공원 입출차 정보(파일)', '2024년 7월 한 달, 3개 출입구 구역만 포함하고 구역 구분이 없음', '2025년 전체 구역 데이터를 파일로도 제공하면 인증키 없이 분석 가능'],
-      ['(신규 제안) 주차구역 기준정보', '구역별 주차면 수·좌표·가까운 공연장이 공개 데이터에 없음', '구역 단위 잔여 예측과 지도 안내가 가능해짐'],
+      ['(신규 제안) 주차구역 기준정보', '구역별 주차면 수(장애인 전용 면수 포함)·좌표·가까운 공연장이 공개 데이터에 없음', '구역 단위 잔여 예측과 지도 안내가 가능해짐'],
       ['(신규 제안) 공연별 관객 규모', '예매·입장 인원 또는 연령대 분포', '주차형·승하차형 사전 판별과 승하차 구역 운영 계획에 활용'],
     ];
     $('#t-quality').innerHTML = '<thead><tr><th>데이터</th><th>발견한 점</th><th>제안·기대 효과</th></tr></thead><tbody>' + q.map((r) => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('') + '</tbody>';
